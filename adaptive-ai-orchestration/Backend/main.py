@@ -18,6 +18,7 @@ from Backend.dependencies import verify_api_key, limiter
 from database.connection import get_db, engine
 from database.models import Query, Evaluation, Probability
 from database import crud
+from core.orchestrator import orchestrate
 
 import time
 
@@ -55,7 +56,7 @@ def health_check(db: Session = Depends(get_db)):
     No API key required — public endpoint.
     """
     try:
-        db.execute( text("SELECT 1"))
+        db.execute(text("SELECT 1"))
         db_status = "connected"
     except:
         db_status = "disconnected"
@@ -81,15 +82,16 @@ def chat(
 ):
     """
     Main endpoint — receives user question and returns answer.
-    Currently returns placeholder response.
-    Real model routing added in Module 3-5.
+    Orchestrator now detects intent, complexity and strategy.
+    Real model routing added in Module 5.
     """
     start_time = time.time()
 
-    # ── Placeholder response until orchestrator is built ──
-    response_text = f"Query received: '{body.query}'. Orchestrator coming in Module 3."
-    strategy = "pending"
-    model = "pending"
+    # ── Real orchestration ──
+    routing       = orchestrate(body.query)
+    strategy      = routing["strategy"]
+    response_text = f"Query received. Strategy: {strategy}. Model routing in Module 5."
+    model         = "pending"
 
     latency_ms = int((time.time() - start_time) * 1000)
 
@@ -98,8 +100,8 @@ def chat(
         db            = db,
         session_id    = body.session_id,
         query_text    = body.query,
-        intent        = "unknown",
-        complexity    = "unknown",
+        intent        = routing["intent"],
+        complexity    = routing["complexity"],
         strategy      = strategy,
         model_used    = model,
         response      = response_text,
@@ -186,11 +188,11 @@ def get_metrics(
     model_breakdown = {row[0]: row[1] for row in model_rows}
 
     return MetricsResponse(
-        total_queries        = total_queries,
-        average_latency_ms   = round(avg_latency, 2),
+        total_queries         = total_queries,
+        average_latency_ms    = round(avg_latency, 2),
         average_quality_score = round(avg_quality, 4),
-        strategy_breakdown   = strategy_breakdown,
-        model_breakdown      = model_breakdown
+        strategy_breakdown    = strategy_breakdown,
+        model_breakdown       = model_breakdown
     )
 
 
