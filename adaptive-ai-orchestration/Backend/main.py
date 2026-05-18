@@ -5,8 +5,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from slowapi.errors import RateLimitExceeded
 from slowapi import _rate_limit_exceeded_handler
 from sqlalchemy.orm import Session
-from sqlalchemy import func
-from sqlalchemy import text
+from sqlalchemy import func, text
 
 from Backend.schemas import (
     ChatRequest, ChatResponse,
@@ -14,13 +13,15 @@ from Backend.schemas import (
     HealthResponse, MetricsResponse,
     ProbabilityResponse
 )
+
 from Backend.dependencies import verify_api_key, limiter
-from database.connection import get_db, engine
-from database.models import Query, Evaluation, Probability
+from database.connection import get_db
+from database.models import Query, Evaluation
 from database import crud
 from core.orchestrator import orchestrate
 
 import time
+
 
 # ──────────────────────────────────────────
 # APP SETUP
@@ -29,14 +30,12 @@ import time
 app = FastAPI(
     title="Adaptive AI Orchestration System",
     description="Intelligent query routing across multiple LLM models",
-    version="1.0.0"
+    version="2.0.0"
 )
 
-# Attach rate limiter to app
 app.state.limiter = limiter
 app.add_exception_handler(RateLimitExceeded, _rate_limit_exceeded_handler)
 
-# CORS — allows frontend to talk to this API
 app.add_middleware(
     CORSMiddleware,
     allow_origins=["*"],
@@ -51,10 +50,6 @@ app.add_middleware(
 
 @app.get("/api/health", response_model=HealthResponse)
 def health_check(db: Session = Depends(get_db)):
-    """
-    Checks if the system and database are alive.
-    No API key required — public endpoint.
-    """
     try:
         db.execute(text("SELECT 1"))
         db_status = "connected"
@@ -81,49 +76,80 @@ def chat(
     api_key: str = Depends(verify_api_key)
 ):
     """
-    Main endpoint — receives user question and returns answer.
-    Orchestrator now detects intent, complexity and strategy.
-    Real model routing added in Module 5.
+    Main endpoint.
+    Receives user query.
+    Runs orchestration logic.
+    Module 5 will replace placeholder execution with real Bedrock inference.
     """
+
     start_time = time.time()
 
-    # ── Real orchestration ──
-    routing       = orchestrate(body.query)
-    strategy      = routing["strategy"]
-    response_text = f"Query received. Strategy: {strategy}. Model routing in Module 5."
-    model         = "pending"
+    # ─────────────────────────────────────
+    # ORCHESTRATION
+    # ─────────────────────────────────────
+
+    routing = orchestrate(body.query)
+
+    intent = routing["intent"]
+    complexity = routing["complexity"]
+    strategy = routing["strategy"]
+    model = routing["model"]
+    retrieval_needed = routing["retrieval_needed"]
+
+    # Placeholder response for now
+    response_text = (
+        f"Query received.\n"
+        f"Intent: {intent}\n"
+        f"Complexity: {complexity}\n"
+        f"Strategy: {strategy}\n"
+        f"Model Selected: {model}\n"
+        f"RAG Required: {retrieval_needed}\n"
+        f"Execution will be connected in Module 5."
+    )
 
     latency_ms = int((time.time() - start_time) * 1000)
 
-    # Save query to database
+    # ─────────────────────────────────────
+    # SAVE QUERY
+    # ─────────────────────────────────────
+
     saved_query = crud.save_query(
-        db            = db,
-        session_id    = body.session_id,
-        query_text    = body.query,
-        intent        = routing["intent"],
-        complexity    = routing["complexity"],
-        strategy      = strategy,
-        model_used    = model,
-        response      = response_text,
-        latency_ms    = latency_ms,
-        fallback_used = False
+        db=db,
+        session_id=body.session_id,
+        query_text=body.query,
+        intent=intent,
+        complexity=complexity,
+        strategy=strategy,
+        model_used=model,
+        response=response_text,
+        latency_ms=latency_ms,
+        fallback_used=False
     )
 
-    # Save audit log
+    # ─────────────────────────────────────
+    # AUDIT LOG
+    # ─────────────────────────────────────
+
     crud.save_audit_log(
-        db         = db,
-        event_type = "request",
-        detail     = {"query_id": saved_query.id, "session_id": body.session_id},
-        api_key    = api_key
+        db=db,
+        event_type="request",
+        detail={
+            "query_id": saved_query.id,
+            "session_id": body.session_id,
+            "model": model,
+            "strategy": strategy,
+            "retrieval_needed": retrieval_needed
+        },
+        api_key=api_key
     )
 
     return ChatResponse(
-        response      = response_text,
-        strategy_used = strategy,
-        model_used    = model,
-        latency_ms    = latency_ms,
-        quality_score = 0.0,
-        query_id      = saved_query.id
+        response=response_text,
+        strategy_used=strategy,
+        model_used=model,
+        latency_ms=latency_ms,
+        quality_score=0.0,
+        query_id=saved_query.id
     )
 
 
@@ -137,19 +163,16 @@ def submit_feedback(
     db: Session = Depends(get_db),
     api_key: str = Depends(verify_api_key)
 ):
-    """
-    Receives user rating (1-5 stars) for a response.
-    """
     crud.save_feedback(
-        db       = db,
-        query_id = body.query_id,
-        rating   = body.rating,
-        comment  = body.comment
+        db=db,
+        query_id=body.query_id,
+        rating=body.rating,
+        comment=body.comment
     )
 
     return FeedbackResponse(
-        success = True,
-        message = f"Feedback saved. Thank you for rating this response."
+        success=True,
+        message="Feedback saved successfully."
     )
 
 
@@ -162,37 +185,35 @@ def get_metrics(
     db: Session = Depends(get_db),
     api_key: str = Depends(verify_api_key)
 ):
-    """
-    Returns system performance statistics.
-    Used by the Streamlit dashboard.
-    """
     total_queries = db.query(Query).count()
 
     avg_latency = db.query(func.avg(Query.latency_ms)).scalar() or 0.0
     avg_quality = db.query(func.avg(Evaluation.quality_score)).scalar() or 0.0
 
-    # Strategy breakdown
     strategy_rows = db.query(
         Query.strategy,
         func.count(Query.id)
     ).group_by(Query.strategy).all()
 
-    strategy_breakdown = {row[0]: row[1] for row in strategy_rows}
+    strategy_breakdown = {
+        row[0]: row[1] for row in strategy_rows
+    }
 
-    # Model breakdown
     model_rows = db.query(
         Query.model_used,
         func.count(Query.id)
     ).group_by(Query.model_used).all()
 
-    model_breakdown = {row[0]: row[1] for row in model_rows}
+    model_breakdown = {
+        row[0]: row[1] for row in model_rows
+    }
 
     return MetricsResponse(
-        total_queries         = total_queries,
-        average_latency_ms    = round(avg_latency, 2),
-        average_quality_score = round(avg_quality, 4),
-        strategy_breakdown    = strategy_breakdown,
-        model_breakdown       = model_breakdown
+        total_queries=total_queries,
+        average_latency_ms=round(avg_latency, 2),
+        average_quality_score=round(avg_quality, 4),
+        strategy_breakdown=strategy_breakdown,
+        model_breakdown=model_breakdown
     )
 
 
@@ -205,19 +226,16 @@ def get_probabilities(
     db: Session = Depends(get_db),
     api_key: str = Depends(verify_api_key)
 ):
-    """
-    Returns current probability table.
-    Shows how the Decision Engine is routing queries.
-    """
     rows = crud.get_all_probabilities(db)
+
     return [
         ProbabilityResponse(
-            model        = row.model,
-            complexity   = row.complexity,
-            p_quality    = row.p_quality,
-            p_latency    = row.p_latency,
-            p_cost       = row.p_cost,
-            sample_count = row.sample_count
+            model=row.model,
+            complexity=row.complexity,
+            p_quality=row.p_quality,
+            p_latency=row.p_latency,
+            p_cost=row.p_cost,
+            sample_count=row.sample_count
         )
         for row in rows
     ]
