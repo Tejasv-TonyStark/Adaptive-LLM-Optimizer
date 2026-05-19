@@ -1,4 +1,4 @@
-# backend/main.py
+# Backend/main.py
 
 from fastapi import FastAPI, Depends, Request
 from fastapi.middleware.cors import CORSMiddleware
@@ -13,15 +13,15 @@ from Backend.schemas import (
     HealthResponse, MetricsResponse,
     ProbabilityResponse
 )
-
 from Backend.dependencies import verify_api_key, limiter
 from database.connection import get_db
 from database.models import Query, Evaluation
 from database import crud
 from core.orchestrator import orchestrate
+from core.decision_engine import select_best_model
+from Execution.Execution_layer import execute_query
 
 import time
-
 
 # ──────────────────────────────────────────
 # APP SETUP
@@ -50,6 +50,7 @@ app.add_middleware(
 
 @app.get("/api/health", response_model=HealthResponse)
 def health_check(db: Session = Depends(get_db)):
+    """Checks if system and database are alive."""
     try:
         db.execute(text("SELECT 1"))
         db_status = "connected"
@@ -76,80 +77,78 @@ def chat(
     api_key: str = Depends(verify_api_key)
 ):
     """
-    Main endpoint.
-    Receives user query.
-    Runs orchestration logic.
-    Module 5 will replace placeholder execution with real Bedrock inference.
+    Full pipeline:
+    1. Orchestrate  → intent + complexity + strategy
+    2. Decision Engine → best model from probability scores
+    3. Execute      → call Bedrock model
+    4. Save         → store to database
     """
-
     start_time = time.time()
 
-    # ─────────────────────────────────────
-    # ORCHESTRATION
-    # ─────────────────────────────────────
-
-    routing = orchestrate(body.query)
-
-    intent = routing["intent"]
-    complexity = routing["complexity"]
-    strategy = routing["strategy"]
-    model = routing["model"]
+    # ── Step 1: Orchestrate ──
+    routing          = orchestrate(body.query)
+    intent           = routing["intent"]
+    complexity       = routing["complexity"]
+    strategy         = routing["strategy"]
     retrieval_needed = routing["retrieval_needed"]
 
-    # Placeholder response for now
-    response_text = (
-        f"Query received.\n"
-        f"Intent: {intent}\n"
-        f"Complexity: {complexity}\n"
-        f"Strategy: {strategy}\n"
-        f"Model Selected: {model}\n"
-        f"RAG Required: {retrieval_needed}\n"
-        f"Execution will be connected in Module 5."
+    # ── Step 2: Decision Engine picks model ──
+    decision = select_best_model(db, complexity)
+    model    = decision["selected_model"]
+
+    # ── Step 3: Execute ──
+    # context=None until Module 6 RAG system is built
+    result        = execute_query(
+        query    = body.query,
+        model    = model,
+        strategy = strategy,
+        context  = None
     )
 
-    latency_ms = int((time.time() - start_time) * 1000)
+    response_text = result["response"]
+    model_used    = result["model_used"]
+    fallback_used = result["fallback_used"]
+    latency_ms    = int((time.time() - start_time) * 1000)
 
-    # ─────────────────────────────────────
-    # SAVE QUERY
-    # ─────────────────────────────────────
-
+    # ── Step 4: Save to database ──
     saved_query = crud.save_query(
-        db=db,
-        session_id=body.session_id,
-        query_text=body.query,
-        intent=intent,
-        complexity=complexity,
-        strategy=strategy,
-        model_used=model,
-        response=response_text,
-        latency_ms=latency_ms,
-        fallback_used=False
+        db            = db,
+        session_id    = body.session_id,
+        query_text    = body.query,
+        intent        = intent,
+        complexity    = complexity,
+        strategy      = strategy,
+        model_used    = model_used,
+        response      = response_text,
+        latency_ms    = latency_ms,
+        fallback_used = fallback_used
     )
 
-    # ─────────────────────────────────────
-    # AUDIT LOG
-    # ─────────────────────────────────────
-
+    # ── Step 5: Audit log ──
     crud.save_audit_log(
-        db=db,
-        event_type="request",
-        detail={
-            "query_id": saved_query.id,
-            "session_id": body.session_id,
-            "model": model,
-            "strategy": strategy,
-            "retrieval_needed": retrieval_needed
+        db         = db,
+        event_type = "request",
+        detail     = {
+            "query_id":         saved_query.id,
+            "session_id":       body.session_id,
+            "intent":           intent,
+            "complexity":       complexity,
+            "model":            model_used,
+            "strategy":         strategy,
+            "retrieval_needed": retrieval_needed,
+            "latency_ms":       latency_ms,
+            "fallback":         fallback_used
         },
-        api_key=api_key
+        api_key    = api_key
     )
 
     return ChatResponse(
-        response=response_text,
-        strategy_used=strategy,
-        model_used=model,
-        latency_ms=latency_ms,
-        quality_score=0.0,
-        query_id=saved_query.id
+        response      = response_text,
+        strategy_used = strategy,
+        model_used    = model_used,
+        latency_ms    = latency_ms,
+        quality_score = 0.0,
+        query_id      = saved_query.id
     )
 
 
@@ -163,16 +162,17 @@ def submit_feedback(
     db: Session = Depends(get_db),
     api_key: str = Depends(verify_api_key)
 ):
+    """Receives user rating (1-5 stars) for a response."""
     crud.save_feedback(
-        db=db,
-        query_id=body.query_id,
-        rating=body.rating,
-        comment=body.comment
+        db       = db,
+        query_id = body.query_id,
+        rating   = body.rating,
+        comment  = body.comment
     )
 
     return FeedbackResponse(
-        success=True,
-        message="Feedback saved successfully."
+        success = True,
+        message = "Feedback saved successfully."
     )
 
 
@@ -185,35 +185,27 @@ def get_metrics(
     db: Session = Depends(get_db),
     api_key: str = Depends(verify_api_key)
 ):
+    """Returns system performance statistics."""
     total_queries = db.query(Query).count()
-
-    avg_latency = db.query(func.avg(Query.latency_ms)).scalar() or 0.0
-    avg_quality = db.query(func.avg(Evaluation.quality_score)).scalar() or 0.0
+    avg_latency   = db.query(func.avg(Query.latency_ms)).scalar() or 0.0
+    avg_quality   = db.query(func.avg(Evaluation.quality_score)).scalar() or 0.0
 
     strategy_rows = db.query(
         Query.strategy,
         func.count(Query.id)
     ).group_by(Query.strategy).all()
 
-    strategy_breakdown = {
-        row[0]: row[1] for row in strategy_rows
-    }
-
     model_rows = db.query(
         Query.model_used,
         func.count(Query.id)
     ).group_by(Query.model_used).all()
 
-    model_breakdown = {
-        row[0]: row[1] for row in model_rows
-    }
-
     return MetricsResponse(
-        total_queries=total_queries,
-        average_latency_ms=round(avg_latency, 2),
-        average_quality_score=round(avg_quality, 4),
-        strategy_breakdown=strategy_breakdown,
-        model_breakdown=model_breakdown
+        total_queries         = total_queries,
+        average_latency_ms    = round(avg_latency, 2),
+        average_quality_score = round(avg_quality, 4),
+        strategy_breakdown    = {row[0]: row[1] for row in strategy_rows},
+        model_breakdown       = {row[0]: row[1] for row in model_rows}
     )
 
 
@@ -226,16 +218,16 @@ def get_probabilities(
     db: Session = Depends(get_db),
     api_key: str = Depends(verify_api_key)
 ):
+    """Returns current probability routing table."""
     rows = crud.get_all_probabilities(db)
-
     return [
         ProbabilityResponse(
-            model=row.model,
-            complexity=row.complexity,
-            p_quality=row.p_quality,
-            p_latency=row.p_latency,
-            p_cost=row.p_cost,
-            sample_count=row.sample_count
+            model        = row.model,
+            complexity   = row.complexity,
+            p_quality    = row.p_quality,
+            p_latency    = row.p_latency,
+            p_cost       = row.p_cost,
+            sample_count = row.sample_count
         )
         for row in rows
     ]

@@ -4,59 +4,33 @@ from core.intent_detector import detect_intent
 from core.complexity_analyzer import analyze_complexity
 
 
-def select_model(complexity: str) -> tuple[str, str]:
+def select_strategy(complexity: str) -> str:
     """
-    Decision 1 — Select model based on complexity ONLY.
-    RAG is completely irrelevant to this decision.
-
-    Returns:
-        tuple of (model, strategy)
+    Determines execution strategy based on complexity only.
+    Model selection is handled by the decision engine separately.
     """
     if complexity == "low":
-        return "nova-micro", "fast"
+        return "fast"
     elif complexity == "medium":
-        return "llama3-8b", "reasoning"
+        return "reasoning"
     else:
-        return "haiku", "reasoning"
-
-
-def decide_retrieval(intent: str, retrieval_needed: bool) -> bool:
-    """
-    Decision 2 — Decide if RAG retrieval is needed.
-    Model selection is completely irrelevant to this decision.
-
-    Returns:
-        bool — whether to retrieve documents
-    """
-    if intent == "general":
-        return False
-    return retrieval_needed
+        return "reasoning"
 
 
 def orchestrate(query: str) -> dict:
     """
     Master routing function.
 
-    Makes TWO completely independent decisions:
+    Makes TWO independent decisions:
+    1. Strategy → based on complexity
+    2. RAG needed → based on intent + keywords
 
-    Decision 1 → Which model?
-                 Based on: complexity, cost, latency
-                 Nova Micro  → low complexity
-                 Llama 3.1   → medium complexity
-                 Claude Haiku → high complexity
+    Model selection is NOT done here.
+    It is handled by the decision engine using probability scores.
 
-    Decision 2 → RAG needed?
-                 Based on: intent, keyword matching
-                 True  → retrieve document chunks first
-                 False → answer directly from model knowledge
-
-    Valid combinations:
-        Nova  + no RAG  → simple general question
-        Nova  + RAG     → simple document lookup
-        Llama + no RAG  → medium reasoning question
-        Llama + RAG     → medium document reasoning
-        Haiku + no RAG  → complex reasoning question
-        Haiku + RAG     → complex document reasoning
+    Returns:
+        dict with intent, complexity, strategy,
+        retrieval_needed, execution_strategy
     """
 
     # ── Step 1: Detect intent ──
@@ -65,18 +39,14 @@ def orchestrate(query: str) -> dict:
     confidence    = intent_result["confidence"]
 
     # ── Step 2: Analyze complexity ──
-    complexity_result    = analyze_complexity(query, intent)
-    complexity           = complexity_result["complexity"]
-    raw_retrieval_needed = complexity_result["retrieval_needed"]
+    complexity_result = analyze_complexity(query, intent)
+    complexity        = complexity_result["complexity"]
+    retrieval_needed  = complexity_result["retrieval_needed"]
 
-    # ── Decision 1: Model selection (complexity only) ──
-    model, strategy = select_model(complexity)
+    # ── Step 3: Determine strategy ──
+    strategy = select_strategy(complexity)
 
-    # ── Decision 2: RAG decision (intent + keywords only) ──
-    retrieval_needed = decide_retrieval(intent, raw_retrieval_needed)
-
-    # ── Step 3: Adjust strategy label if RAG needed ──
-    # Strategy label reflects execution path, not model change
+    # ── Step 4: Build execution strategy label ──
     if retrieval_needed:
         execution_strategy = f"{strategy}+rag"
     else:
@@ -86,9 +56,8 @@ def orchestrate(query: str) -> dict:
         "intent":             intent,
         "confidence":         confidence,
         "complexity":         complexity,
-        "model":              model,
-        "strategy":           strategy,
         "retrieval_needed":   retrieval_needed,
+        "strategy":           strategy,
         "execution_strategy": execution_strategy
     }
 
@@ -99,28 +68,21 @@ def orchestrate(query: str) -> dict:
 
 if __name__ == "__main__":
     test_queries = [
-        # Simple general
-        ("What is Python?",                                           "Nova + no RAG expected"),
-        # Simple document lookup
-        ("What is our leave policy?",                                 "Nova + RAG expected"),
-        # Medium reasoning
-        ("Compare transformers vs RNN architectures in detail",       "Llama + no RAG expected"),
-        # Medium document reasoning
-        ("Summarize our leave policy and compare annual vs maternity","Llama + RAG expected"),
-        # Complex reasoning
-        ("Explain the mathematical foundations of backpropagation",   "Haiku + no RAG expected"),
-        # Complex document reasoning
-        ("Compare clauses across contracts and find contradictions",  "Haiku + RAG expected"),
+        "What is Python?",
+        "Compare transformers vs RNN architectures in detail",
+        "What is our leave policy?",
+        "What does our contract say about resignation?",
+        "Explain how neural networks work",
+        "What are our salary benefits?"
     ]
 
     print("\n── Orchestration Results ──\n")
-    for query, expected in test_queries:
+    for query in test_queries:
         result = orchestrate(query)
         print(f"Query:              {query}")
-        print(f"Expected:           {expected}")
         print(f"Intent:             {result['intent']}")
         print(f"Complexity:         {result['complexity']}")
-        print(f"Model:              {result['model']}")
         print(f"Retrieval needed:   {result['retrieval_needed']}")
+        print(f"Strategy:           {result['strategy']}")
         print(f"Execution strategy: {result['execution_strategy']}")
         print()
