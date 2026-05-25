@@ -1,6 +1,6 @@
 # Backend/main.py
 
-from fastapi import FastAPI, Depends, Request
+from fastapi import FastAPI, Depends, Request, BackgroundTasks
 from fastapi.middleware.cors import CORSMiddleware
 from slowapi.errors import RateLimitExceeded
 from slowapi import _rate_limit_exceeded_handler
@@ -20,6 +20,7 @@ from database import crud
 from core.orchestrator import orchestrate
 from core.decision_engine import select_best_model
 from Execution.Execution_layer import execute_query
+from RAG.retriever import retrieve
 
 import time
 
@@ -42,6 +43,67 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"]
 )
+
+
+# ──────────────────────────────────────────
+# BACKGROUND EVALUATION + LEARNING
+# Runs after response is sent — user never waits
+# ──────────────────────────────────────────
+
+def run_evaluation(query_id: int, query: str,
+                   response: str, context: str,
+                   model_used: str, complexity: str,
+                   latency_ms: int):
+    """
+    Runs LLM judge evaluation in background.
+    Saves quality scores to evaluations table.
+    Then updates probability table via learning engine.
+    Called after every chat response automatically.
+    """
+    from Evaluation.Evaluator import evaluate_response
+    from Learning.learning_engine import update_model_probabilities
+    from database.connection import SessionLocal
+
+    db = SessionLocal()
+    try:
+        # ── Step 1: Evaluate response quality ──
+        scores = evaluate_response(query, response, context)
+
+        if scores["success"]:
+            # ── Step 2: Save evaluation scores ──
+            crud.save_evaluation(
+                db            = db,
+                query_id      = query_id,
+                relevance     = scores["relevance"],
+                correctness   = scores["correctness"],
+                completeness  = scores["completeness"],
+                quality_score = scores["quality_score"],
+                reasoning     = scores["reasoning"]
+            )
+            print(f"✅ Evaluation saved for query {query_id} "
+                  f"— quality={scores['quality_score']}")
+
+            # ── Step 3: Update probabilities via learning engine ──
+            update_result = update_model_probabilities(
+                db            = db,
+                model         = model_used,
+                complexity    = complexity,
+                quality_score = scores["quality_score"],
+                latency_ms    = latency_ms
+            )
+
+            if update_result:
+                print(f"✅ Probabilities updated for {model_used} + {complexity} "
+                      f"— p_quality: {update_result['old_p_quality']} "
+                      f"→ {update_result['new_p_quality']}")
+        else:
+            print(f"⚠️  Evaluation failed for query {query_id}: "
+                  f"{scores['reasoning']}")
+
+    except Exception as e:
+        print(f"❌ Background evaluation error: {e}")
+    finally:
+        db.close()
 
 
 # ──────────────────────────────────────────
@@ -73,36 +135,48 @@ def health_check(db: Session = Depends(get_db)):
 def chat(
     request: Request,
     body: ChatRequest,
+    background_tasks: BackgroundTasks,
     db: Session = Depends(get_db),
     api_key: str = Depends(verify_api_key)
 ):
     """
     Full pipeline:
-    1. Orchestrate  → intent + complexity + strategy
+    1. Orchestrate     → intent + complexity + strategy
     2. Decision Engine → best model from probability scores
-    3. Execute      → call Bedrock model
-    4. Save         → store to database
+    3. RAG             → retrieve document context if needed
+    4. Execute         → call Bedrock model
+    5. Save            → store to database
+    6. Audit log       → record request details
+    7. Evaluate        → background LLM judge (async)
+                         + learning engine updates probabilities
     """
     start_time = time.time()
 
     # ── Step 1: Orchestrate ──
-    routing          = orchestrate(body.query)
-    intent           = routing["intent"]
-    complexity       = routing["complexity"]
-    strategy         = routing["strategy"]
-    retrieval_needed = routing["retrieval_needed"]
+    routing            = orchestrate(body.query)
+    intent             = routing["intent"]
+    complexity         = routing["complexity"]
+    strategy           = routing["strategy"]
+    execution_strategy = routing["execution_strategy"]
+    retrieval_needed   = routing["retrieval_needed"]
 
     # ── Step 2: Decision Engine picks model ──
     decision = select_best_model(db, complexity)
     model    = decision["selected_model"]
 
-    # ── Step 3: Execute ──
-    # context=None until Module 6 RAG system is built
+    # ── Step 3: RAG retrieval if needed ──
+    context = None
+    if retrieval_needed:
+        retrieval_result = retrieve(body.query)
+        context          = retrieval_result["context"] \
+                           if retrieval_result["found"] else None
+
+    # ── Step 4: Execute ──
     result        = execute_query(
         query    = body.query,
         model    = model,
         strategy = strategy,
-        context  = None
+        context  = context
     )
 
     response_text = result["response"]
@@ -110,41 +184,57 @@ def chat(
     fallback_used = result["fallback_used"]
     latency_ms    = int((time.time() - start_time) * 1000)
 
-    # ── Step 4: Save to database ──
+    # ── Step 5: Save to database ──
     saved_query = crud.save_query(
         db            = db,
         session_id    = body.session_id,
         query_text    = body.query,
         intent        = intent,
         complexity    = complexity,
-        strategy      = strategy,
+        strategy      = execution_strategy,
         model_used    = model_used,
         response      = response_text,
         latency_ms    = latency_ms,
         fallback_used = fallback_used
     )
 
-    # ── Step 5: Audit log ──
+    # ── Step 6: Audit log ──
     crud.save_audit_log(
         db         = db,
         event_type = "request",
         detail     = {
-            "query_id":         saved_query.id,
-            "session_id":       body.session_id,
-            "intent":           intent,
-            "complexity":       complexity,
-            "model":            model_used,
-            "strategy":         strategy,
-            "retrieval_needed": retrieval_needed,
-            "latency_ms":       latency_ms,
-            "fallback":         fallback_used
+            "query_id":          saved_query.id,
+            "session_id":        body.session_id,
+            "intent":            intent,
+            "complexity":        complexity,
+            "model":             model_used,
+            "strategy":          execution_strategy,
+            "retrieval_needed":  retrieval_needed,
+            "rag_context_found": context is not None,
+            "latency_ms":        latency_ms,
+            "fallback":          fallback_used
         },
         api_key    = api_key
     )
 
+    # ── Step 7: Background evaluation + learning ──
+    # User gets response immediately
+    # Judge runs quietly in background
+    # Learning engine updates probabilities after judge finishes
+    background_tasks.add_task(
+        run_evaluation,
+        query_id   = saved_query.id,
+        query      = body.query,
+        response   = response_text,
+        context    = context,
+        model_used = model_used,
+        complexity = complexity,
+        latency_ms = latency_ms
+    )
+
     return ChatResponse(
         response      = response_text,
-        strategy_used = strategy,
+        strategy_used = execution_strategy,
         model_used    = model_used,
         latency_ms    = latency_ms,
         quality_score = 0.0,
