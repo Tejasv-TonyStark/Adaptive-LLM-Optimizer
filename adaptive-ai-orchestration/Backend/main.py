@@ -61,7 +61,7 @@ def run_evaluation(query_id: int, query: str,
     Called after every chat response automatically.
     """
     from Evaluation.Evaluator import evaluate_response
-    from Learning.learning_engine import update_model_probabilities
+    from Learning.learning import update_model_probabilities
     from database.connection import SessionLocal
 
     db = SessionLocal()
