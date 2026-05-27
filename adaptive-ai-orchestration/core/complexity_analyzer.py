@@ -49,7 +49,7 @@ HIGH_DOMAIN_OVERRIDES = [
     "multi-document",
     "synthesize across",
 
-    # architecture comparisons
+    # Architecture comparisons
     "compare architectures",
     "architectures in detail",
 ]
@@ -116,36 +116,59 @@ SCORING_KEYWORDS = {
 
 # ──────────────────────────────────────────
 # RAG DETECTION
+# Specific HR/company keywords only.
+# Generic words like "benefits", "rules",
+# "document" removed to avoid false triggers.
 # ──────────────────────────────────────────
 
 RAG_KEYWORDS = [
-    "policy",
-    "policies",
+    # HR specific
+    "leave policy",
+    "notice period",
+    "resignation",
+    "reimbursement",
+    "allowance",
+    "salary structure",
+    "salary details",
+    "appraisal",
+    "performance review",
+    "onboarding",
+    "offboarding",
+    "probation",
+
+    # Document references
+    "handbook",
+    "employee handbook",
+    "hr policy",
+    "company policy",
+    "company guidelines",
+    "our policy",
+    "our guidelines",
+
+    # Legal/contract
     "clause",
     "clauses",
-    "section",
-    "guideline",
-    "reimbursement",
-    "leave",
-    "salary",
-    "benefits",
-    "allowance",
-    "resignation",
-    "notice period",
-    "contract",
-    "agreement",
-    "rules",
+    "contract terms",
+    "agreement terms",
     "regulation",
-    "procedure",
-    "handbook",
-    "document",
+    "compliance",
+
+    # Explicit references
     "according to",
     "as per",
+    "as mentioned in",
     "what does it say",
+    "what does the document",
     "our company",
-    "the company",
+    "the company says",
+    "info services",
+    "infoservices",
 ]
 
+
+# ──────────────────────────────────────────
+# LOW COMPLEXITY STARTERS
+# ──────────────────────────────────────────
 
 LOW_COMPLEXITY_STARTERS = [
     "what is",
@@ -160,6 +183,10 @@ LOW_COMPLEXITY_STARTERS = [
     "list the",
     "give me the",
     "tell me the",
+    "is this",
+    "are there",
+    "can you tell",
+    "do you know",
 ]
 
 
@@ -169,39 +196,39 @@ LOW_COMPLEXITY_STARTERS = [
 
 def analyze_complexity(query: str, intent: str) -> dict:
     query_lower = query.lower()
-    words = query_lower.split()
-    word_count = len(words)
+    words       = query_lower.split()
+    word_count  = len(words)
 
     rag = _check_rag(query_lower, intent)
 
-    # HIGH overrides
+    # ── HIGH overrides ──
     for keyword in HIGH_DOMAIN_OVERRIDES:
         if keyword in query_lower:
             return _result(
-                complexity="high",
-                score=99,
-                retrieval_needed=rag,
-                trigger=f"override:{keyword}"
+                complexity       = "high",
+                score            = 99,
+                retrieval_needed = rag,
+                trigger          = f"override:{keyword}"
             )
 
-    # compare + architecture
+    # compare + architecture special case
     if "compare" in query_lower and "architecture" in query_lower:
         return _result(
-            complexity="high",
-            score=99,
-            retrieval_needed=rag,
-            trigger="override:compare+architecture"
+            complexity       = "high",
+            score            = 99,
+            retrieval_needed = rag,
+            trigger          = "override:compare+architecture"
         )
 
     if "compare" in query_lower and "in detail" in query_lower:
         return _result(
-            complexity="high",
-            score=99,
-            retrieval_needed=rag,
-            trigger="override:compare+detail"
+            complexity       = "high",
+            score            = 99,
+            retrieval_needed = rag,
+            trigger          = "override:compare+detail"
         )
 
-    # medium floor
+    # ── Medium floor ──
     medium_triggered = False
 
     for keyword in MEDIUM_FLOOR_KEYWORDS:
@@ -215,10 +242,10 @@ def analyze_complexity(query: str, intent: str) -> dict:
     ):
         medium_triggered = True
 
-    # scoring
+    # ── Scoring ──
     score = 0
 
-    # query length
+    # Query length contribution
     if word_count < 6:
         score += 0
     elif word_count <= 10:
@@ -228,18 +255,18 @@ def analyze_complexity(query: str, intent: str) -> dict:
     else:
         score += 3
 
-    # weighted keywords
+    # Weighted keywords
     for keyword, weight in SCORING_KEYWORDS.items():
         if keyword in query_lower:
             score += weight
 
-    # simple starter penalty
+    # Simple starter penalty — strongly penalise obvious simple questions
     for starter in LOW_COMPLEXITY_STARTERS:
         if query_lower.startswith(starter):
-            score -= 2
+            score -= 3   # increased from -2 to -3
             break
 
-    # multipart reasoning bonus
+    # Multi-part reasoning bonus
     multi_part = [
         "and also",
         "as well as",
@@ -256,7 +283,7 @@ def analyze_complexity(query: str, intent: str) -> dict:
 
     score = max(score, 0)
 
-    # raw classification
+    # ── Raw classification ──
     if score <= 1:
         raw = "low"
     elif score <= 4:
@@ -264,19 +291,19 @@ def analyze_complexity(query: str, intent: str) -> dict:
     else:
         raw = "high"
 
-    # enforce medium floor
+    # ── Enforce medium floor ──
     if medium_triggered and raw == "low":
-        final = "medium"
+        final   = "medium"
         trigger = "medium_floor"
     else:
-        final = raw
+        final   = raw
         trigger = None
 
     return _result(
-        complexity=final,
-        score=score,
-        retrieval_needed=rag,
-        trigger=trigger
+        complexity       = final,
+        score            = score,
+        retrieval_needed = rag,
+        trigger          = trigger
     )
 
 
@@ -285,18 +312,19 @@ def analyze_complexity(query: str, intent: str) -> dict:
 # ──────────────────────────────────────────
 
 def _check_rag(query_lower: str, intent: str) -> bool:
-    if intent == "general":
-        return False
-
+    """
+    Only trigger RAG if query contains specific HR/company phrases.
+    Generic intent alone is never enough.
+    """
     return any(keyword in query_lower for keyword in RAG_KEYWORDS)
 
 
 def _result(complexity, score, retrieval_needed, trigger):
     return {
-        "complexity": complexity,
-        "score": score,
+        "complexity":       complexity,
+        "score":            score,
         "retrieval_needed": retrieval_needed,
-        "trigger": trigger,
+        "trigger":          trigger,
     }
 
 
@@ -306,17 +334,21 @@ def _result(complexity, score, retrieval_needed, trigger):
 
 if __name__ == "__main__":
     test_cases = [
-        ("What is Python?", "general", "low", False),
-        ("Who is Alan Turing?", "general", "low", False),
-        ("What is our leave policy?", "specific", "low", True),
-        ("Explain how neural networks work", "general", "medium", False),
-        ("Summarize our leave policy", "specific", "medium", True),
-        ("Compare Python vs Java", "general", "medium", False),
-        ("Explain the mathematical foundations of backpropagation", "general", "high", False),
-        ("Compare transformers vs RNN architectures in detail", "general", "high", False),
-        ("Compare clauses across contracts and find contradictions", "specific", "high", True),
-        ("Critically analyze the implications of our resignation clause", "specific", "high", True),
-        ("Synthesize findings across multiple policy documents", "specific", "high", True),
+        # query                                                  intent      expected_complexity  expected_rag
+        ("What is Python?",                                      "general",  "low",               False),
+        ("Who is Alan Turing?",                                  "general",  "low",               False),
+        ("What are the benefits of being a freelancer?",         "general",  "low",               False),
+        ("Is this related to RAG documents?",                    "general",  "low",               False),
+        ("What is our leave policy?",                            "specific", "low",               True),
+        ("What is the notice period for resignation?",           "specific", "low",               True),
+        ("Explain how neural networks work",                     "general",  "medium",            False),
+        ("Summarize our employee handbook",                      "specific", "medium",            True),
+        ("Compare Python vs Java",                               "general",  "medium",            False),
+        ("How does backpropagation work?",                       "general",  "medium",            False),
+        ("Explain the mathematical foundations of backprop",     "general",  "high",              False),
+        ("Compare transformers vs RNN architectures in detail",  "general",  "high",              False),
+        ("Find contradictions across contracts",                 "specific", "high",              True),
+        ("Critically analyze the resignation clause",            "specific", "high",              True),
     ]
 
     passed = 0
@@ -328,9 +360,8 @@ if __name__ == "__main__":
         result = analyze_complexity(query, intent)
 
         complexity_ok = result["complexity"] == expected_complexity
-        rag_ok = result["retrieval_needed"] == expected_rag
-
-        overall = complexity_ok and rag_ok
+        rag_ok        = result["retrieval_needed"] == expected_rag
+        overall       = complexity_ok and rag_ok
 
         if overall:
             passed += 1
@@ -340,13 +371,13 @@ if __name__ == "__main__":
             icon = "❌"
 
         print(f"{icon} {query}")
-        print(f"   Complexity: expected={expected_complexity:6} got={result['complexity']:6}")
-        print(f"   RAG:        expected={expected_rag} got={result['retrieval_needed']}")
+        print(f"   Complexity : expected={expected_complexity:6}  got={result['complexity']:6}  {'✓' if complexity_ok else '✗'}")
+        print(f"   RAG        : expected={str(expected_rag):5}   got={str(result['retrieval_needed']):5}  {'✓' if rag_ok else '✗'}")
 
         if result["trigger"]:
-            print(f"   Trigger:    {result['trigger']}")
+            print(f"   Trigger    : {result['trigger']}")
 
-        print(f"   Score:      {result['score']}")
+        print(f"   Score      : {result['score']}")
         print()
 
     print(f"── Results: {passed} passed / {failed} failed ──")

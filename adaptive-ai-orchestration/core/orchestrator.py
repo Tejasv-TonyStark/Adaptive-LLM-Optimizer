@@ -6,7 +6,7 @@ from core.complexity_analyzer import analyze_complexity
 
 def select_strategy(complexity: str) -> str:
     """
-    Determines execution strategy based on complexity only.
+    Determines execution strategy based on complexity.
     Model selection is handled by the decision engine separately.
     """
     if complexity == "low":
@@ -22,11 +22,15 @@ def orchestrate(query: str) -> dict:
     Master routing function.
 
     Makes TWO independent decisions:
-    1. Strategy → based on complexity
-    2. RAG needed → based on intent + keywords
+    1. Strategy     → based on complexity
+    2. RAG needed   → based on intent + specific HR keywords
 
     Model selection is NOT done here.
     It is handled by the decision engine using probability scores.
+
+    Key fix: intent detector now uses ORG_MARKER + HR_TOPIC logic,
+    so "benefits of freelancing" stays general and doesn't
+    trigger RAG or wrong model routing.
 
     Returns:
         dict with intent, complexity, strategy,
@@ -67,22 +71,42 @@ def orchestrate(query: str) -> dict:
 # ──────────────────────────────────────────
 
 if __name__ == "__main__":
-    test_queries = [
-        "What is Python?",
-        "Compare transformers vs RNN architectures in detail",
-        "What is our leave policy?",
-        "What does our contract say about resignation?",
-        "Explain how neural networks work",
-        "What are our salary benefits?"
+    test_cases = [
+        # query                                               expected_complexity  expected_rag
+        ("What is Python?",                                   "low",               False),
+        ("What are the benefits of being a freelancer?",      "low",               False),
+        ("What are some salary negotiation tips?",            "low",               False),
+        ("Is this related to the RAG documents I uploaded?",  "low",               False),
+        ("Explain how neural networks work",                  "medium",            False),
+        ("Compare Python vs Java",                            "medium",            False),
+        ("What is our leave policy?",                         "low",               True),
+        ("What does our contract say about resignation?",     "low",               True),
+        ("Summarize our employee handbook",                   "medium",            True),
+        ("Compare transformers vs RNN in detail",             "high",              False),
+        ("Find contradictions across our contracts",          "high",              True),
     ]
 
     print("\n── Orchestration Results ──\n")
-    for query in test_queries:
+
+    passed = 0
+    failed = 0
+
+    for query, exp_complexity, exp_rag in test_cases:
         result = orchestrate(query)
-        print(f"Query:              {query}")
-        print(f"Intent:             {result['intent']}")
-        print(f"Complexity:         {result['complexity']}")
-        print(f"Retrieval needed:   {result['retrieval_needed']}")
-        print(f"Strategy:           {result['strategy']}")
-        print(f"Execution strategy: {result['execution_strategy']}")
+
+        complexity_ok = result["complexity"]       == exp_complexity
+        rag_ok        = result["retrieval_needed"] == exp_rag
+        overall       = complexity_ok and rag_ok
+
+        icon = "✅" if overall else "❌"
+        if overall: passed += 1
+        else:        failed += 1
+
+        print(f"{icon} {query}")
+        print(f"   Intent     : {result['intent']} (conf={result['confidence']})")
+        print(f"   Complexity : expected={exp_complexity:6}  got={result['complexity']:6}  {'✓' if complexity_ok else '✗'}")
+        print(f"   RAG        : expected={str(exp_rag):5}   got={str(result['retrieval_needed']):5}  {'✓' if rag_ok else '✗'}")
+        print(f"   Strategy   : {result['execution_strategy']}")
         print()
+
+    print(f"── Results: {passed} passed / {failed} failed ──")

@@ -7,44 +7,30 @@ from RAG.vector_store import search_index
 # SETTINGS
 # ──────────────────────────────────────────
 
-SIMILARITY_THRESHOLD = 0.70  # minimum score to include a chunk
-MAX_CONTEXT_CHUNKS   = 3     # max chunks to include in prompt
-
+SIMILARITY_THRESHOLD = 0.75  # raised from 0.70
 
 def retrieve(query: str, top_k: int = 5) -> dict:
-    """
-    Main retrieval function.
-    Embeds the query, searches FAISS, filters by threshold.
-
-    Args:
-        query: user question
-        top_k: number of candidates to fetch before filtering
-
-    Returns:
-        dict with context string and source chunks
-    """
-    # Embed the query
     query_embedding = embed_query(query)
-
-    # Search FAISS index
     results = search_index(query_embedding, top_k=top_k)
 
-    # Filter by similarity threshold
     filtered = [
         r for r in results
         if r["score"] >= SIMILARITY_THRESHOLD
     ]
 
-    # If nothing passes threshold use top 2 anyway
+    # ← REMOVE the fallback that forces results[:2]
+    # If nothing passes threshold, return nothing
     if not filtered:
-        filtered = results[:2]
+        return {
+            "context": "",
+            "chunks":  [],
+            "found":   False
+        }
 
-    # Limit to max chunks
     filtered = filtered[:MAX_CONTEXT_CHUNKS]
 
-    # Build context string for prompt
     context_parts = []
-    for i, chunk in enumerate(filtered):
+    for chunk in filtered:
         context_parts.append(
             f"[Source: {chunk['source']} | Score: {chunk['score']}]\n"
             f"{chunk['text']}"
@@ -53,12 +39,10 @@ def retrieve(query: str, top_k: int = 5) -> dict:
     context = "\n\n---\n\n".join(context_parts)
 
     return {
-        "context":  context,
-        "chunks":   filtered,
-        "found":    len(filtered) > 0
+        "context": context,
+        "chunks":  filtered,
+        "found":   True
     }
-
-
 # ──────────────────────────────────────────
 # TEST
 # ──────────────────────────────────────────

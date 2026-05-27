@@ -1,0 +1,687 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8"/>
+<meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+<title>Adaptive AI Orchestration</title>
+<link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;600&family=Syne:wght@400;600;800&display=swap" rel="stylesheet"/>
+<style>
+  :root {
+    --bg:        #0a0a0f;
+    --surface:   #111118;
+    --border:    #1e1e2e;
+    --accent:    #00ffa3;
+    --accent2:   #7c6aff;
+    --accent3:   #ff6b9d;
+    --text:      #e8e8f0;
+    --muted:     #5a5a7a;
+    --card:      #13131e;
+    --mono:      'JetBrains Mono', monospace;
+    --sans:      'Syne', sans-serif;
+  }
+
+  *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+  body {
+    background: var(--bg);
+    color: var(--text);
+    font-family: var(--sans);
+    height: 100vh;
+    display: flex;
+    flex-direction: column;
+    overflow: hidden;
+  }
+
+  /* ── TOPBAR ── */
+  .topbar {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 0 28px;
+    height: 58px;
+    border-bottom: 1px solid var(--border);
+    background: var(--surface);
+    flex-shrink: 0;
+    z-index: 10;
+  }
+
+  .topbar-left {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+  }
+
+  .logo-dot {
+    width: 10px; height: 10px;
+    border-radius: 50%;
+    background: var(--accent);
+    box-shadow: 0 0 12px var(--accent);
+    animation: pulse 2s infinite;
+  }
+
+  @keyframes pulse {
+    0%, 100% { opacity: 1; box-shadow: 0 0 12px var(--accent); }
+    50%       { opacity: 0.5; box-shadow: 0 0 4px var(--accent); }
+  }
+
+  .logo-text {
+    font-family: var(--sans);
+    font-weight: 800;
+    font-size: 15px;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+    color: var(--text);
+  }
+
+  .logo-text span { color: var(--accent); }
+
+  .topbar-right { display: flex; gap: 10px; align-items: center; }
+
+  .badge {
+    font-family: var(--mono);
+    font-size: 10px;
+    padding: 3px 10px;
+    border-radius: 20px;
+    border: 1px solid var(--border);
+    color: var(--muted);
+    letter-spacing: 0.05em;
+  }
+
+  .btn-analysis {
+    font-family: var(--sans);
+    font-weight: 600;
+    font-size: 12px;
+    letter-spacing: 0.06em;
+    text-transform: uppercase;
+    padding: 7px 18px;
+    border-radius: 6px;
+    border: 1px solid var(--accent2);
+    background: transparent;
+    color: var(--accent2);
+    cursor: pointer;
+    transition: all 0.2s;
+    display: flex;
+    align-items: center;
+    gap: 7px;
+  }
+
+  .btn-analysis:hover {
+    background: var(--accent2);
+    color: #fff;
+    box-shadow: 0 0 20px rgba(124,106,255,0.35);
+  }
+
+  .btn-analysis svg { width: 13px; height: 13px; }
+
+  /* ── MAIN LAYOUT ── */
+  .main {
+    display: flex;
+    flex: 1;
+    overflow: hidden;
+  }
+
+  /* ── CHAT PANEL ── */
+  .chat-panel {
+    flex: 1;
+    display: flex;
+    flex-direction: column;
+    overflow: hidden;
+    border-right: 1px solid var(--border);
+  }
+
+  .messages {
+    flex: 1;
+    overflow-y: auto;
+    padding: 28px 32px;
+    display: flex;
+    flex-direction: column;
+    gap: 24px;
+    scroll-behavior: smooth;
+  }
+
+  .messages::-webkit-scrollbar { width: 4px; }
+  .messages::-webkit-scrollbar-track { background: transparent; }
+  .messages::-webkit-scrollbar-thumb { background: var(--border); border-radius: 4px; }
+
+  /* Empty state */
+  .empty-state {
+    margin: auto;
+    text-align: center;
+    opacity: 0.4;
+  }
+
+  .empty-state .big { font-size: 48px; margin-bottom: 12px; }
+  .empty-state h2 { font-size: 18px; font-weight: 600; margin-bottom: 6px; }
+  .empty-state p  { font-family: var(--mono); font-size: 12px; color: var(--muted); }
+
+  /* Messages */
+  .msg { display: flex; gap: 12px; animation: fadeUp 0.3s ease; }
+
+  @keyframes fadeUp {
+    from { opacity: 0; transform: translateY(8px); }
+    to   { opacity: 1; transform: translateY(0); }
+  }
+
+  .msg.user  { flex-direction: row-reverse; }
+
+  .avatar {
+    width: 32px; height: 32px; border-radius: 8px;
+    display: flex; align-items: center; justify-content: center;
+    font-size: 14px; flex-shrink: 0; font-weight: 700;
+  }
+
+  .avatar.ai   { background: linear-gradient(135deg, #00ffa3, #7c6aff); color: #000; font-family: var(--mono); }
+  .avatar.user { background: var(--border); color: var(--muted); }
+
+  .bubble {
+    max-width: 68%;
+    padding: 12px 16px;
+    border-radius: 12px;
+    font-size: 14px;
+    line-height: 1.65;
+  }
+
+  .msg.user  .bubble { background: var(--accent2); color: #fff; border-bottom-right-radius: 3px; }
+  .msg.ai    .bubble { background: var(--card); border: 1px solid var(--border); border-bottom-left-radius: 3px; }
+
+  /* Typing indicator */
+  .typing { display: flex; gap: 5px; align-items: center; padding: 4px 0; }
+  .typing span {
+    width: 7px; height: 7px; border-radius: 50%;
+    background: var(--accent);
+    animation: blink 1.2s infinite;
+  }
+  .typing span:nth-child(2) { animation-delay: 0.2s; }
+  .typing span:nth-child(3) { animation-delay: 0.4s; }
+
+  @keyframes blink {
+    0%, 80%, 100% { opacity: 0.2; transform: scale(0.8); }
+    40%            { opacity: 1;   transform: scale(1.1); }
+  }
+
+  /* ── INPUT BAR ── */
+  .input-bar {
+    padding: 16px 28px 20px;
+    border-top: 1px solid var(--border);
+    background: var(--surface);
+    flex-shrink: 0;
+  }
+
+  .input-row {
+    display: flex;
+    gap: 10px;
+    align-items: flex-end;
+    background: var(--card);
+    border: 1px solid var(--border);
+    border-radius: 12px;
+    padding: 10px 14px;
+    transition: border-color 0.2s;
+  }
+
+  .input-row:focus-within { border-color: var(--accent); }
+
+  #query-input {
+    flex: 1;
+    background: transparent;
+    border: none;
+    outline: none;
+    color: var(--text);
+    font-family: var(--sans);
+    font-size: 14px;
+    resize: none;
+    max-height: 120px;
+    line-height: 1.5;
+  }
+
+  #query-input::placeholder { color: var(--muted); }
+
+  .send-btn {
+    width: 36px; height: 36px;
+    border-radius: 8px;
+    background: var(--accent);
+    border: none;
+    cursor: pointer;
+    display: flex; align-items: center; justify-content: center;
+    flex-shrink: 0;
+    transition: all 0.2s;
+  }
+
+  .send-btn:hover { background: #00cc82; box-shadow: 0 0 16px rgba(0,255,163,0.4); }
+  .send-btn:disabled { background: var(--border); cursor: not-allowed; }
+  .send-btn svg { width: 16px; height: 16px; color: #000; }
+
+  .input-hint {
+    font-family: var(--mono);
+    font-size: 10px;
+    color: var(--muted);
+    margin-top: 8px;
+    padding-left: 4px;
+  }
+
+  /* ── SIDE PANEL ── */
+  .side-panel {
+    width: 320px;
+    flex-shrink: 0;
+    display: flex;
+    flex-direction: column;
+    overflow: hidden;
+    background: var(--surface);
+  }
+
+  .side-header {
+    padding: 18px 20px 14px;
+    border-bottom: 1px solid var(--border);
+    font-size: 11px;
+    font-family: var(--mono);
+    letter-spacing: 0.1em;
+    text-transform: uppercase;
+    color: var(--muted);
+  }
+
+  .side-content {
+    flex: 1;
+    overflow-y: auto;
+    padding: 16px;
+    display: flex;
+    flex-direction: column;
+    gap: 12px;
+  }
+
+  .side-content::-webkit-scrollbar { width: 3px; }
+  .side-content::-webkit-scrollbar-thumb { background: var(--border); }
+
+  /* Routing card */
+  .routing-card {
+    background: var(--card);
+    border: 1px solid var(--border);
+    border-radius: 10px;
+    padding: 14px;
+    animation: fadeUp 0.4s ease;
+  }
+
+  .routing-card.active { border-color: var(--accent); }
+
+  .routing-card-title {
+    font-family: var(--mono);
+    font-size: 10px;
+    letter-spacing: 0.1em;
+    text-transform: uppercase;
+    color: var(--muted);
+    margin-bottom: 12px;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+  }
+
+  .routing-card-title .query-num {
+    background: var(--border);
+    padding: 2px 7px;
+    border-radius: 4px;
+    font-size: 9px;
+  }
+
+  .routing-rows { display: flex; flex-direction: column; gap: 8px; }
+
+  .routing-row {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    font-size: 12px;
+  }
+
+  .routing-label { color: var(--muted); font-family: var(--mono); font-size: 11px; }
+
+  .routing-value {
+    font-family: var(--mono);
+    font-size: 11px;
+    font-weight: 600;
+    padding: 2px 8px;
+    border-radius: 4px;
+  }
+
+  .tag-nova    { background: rgba(0,255,163,0.12); color: #00ffa3; }
+  .tag-llama8  { background: rgba(124,106,255,0.12); color: #a89fff; }
+  .tag-llama70 { background: rgba(255,107,157,0.12); color: #ff6b9d; }
+  .tag-low     { background: rgba(0,255,163,0.08); color: #00ffa3; }
+  .tag-medium  { background: rgba(255,200,80,0.12); color: #ffc850; }
+  .tag-high    { background: rgba(255,107,157,0.1); color: #ff6b9d; }
+  .tag-default { background: var(--border); color: var(--text); }
+
+  .quality-bar-wrap { margin-top: 4px; }
+  .quality-bar-bg {
+    height: 4px; border-radius: 2px;
+    background: var(--border);
+    margin-top: 6px;
+    overflow: hidden;
+  }
+  .quality-bar-fill {
+    height: 100%; border-radius: 2px;
+    background: linear-gradient(90deg, var(--accent2), var(--accent));
+    transition: width 0.8s ease;
+  }
+
+  /* Empty side state */
+  .side-empty {
+    margin: auto;
+    text-align: center;
+    padding: 24px;
+    opacity: 0.3;
+  }
+  .side-empty .icon { font-size: 32px; margin-bottom: 10px; }
+  .side-empty p { font-family: var(--mono); font-size: 11px; color: var(--muted); line-height: 1.6; }
+
+  /* ── SCROLLBAR global ── */
+  * { scrollbar-width: thin; scrollbar-color: var(--border) transparent; }
+</style>
+</head>
+<body>
+
+<!-- TOPBAR -->
+<div class="topbar">
+  <div class="topbar-left">
+    <div class="logo-dot"></div>
+    <span class="logo-text">Adaptive<span>AI</span></span>
+    <span class="badge">v2.0 · AWS Bedrock</span>
+  </div>
+  <div class="topbar-right">
+    <span class="badge" id="status-badge">● API Connected</span>
+    <button class="btn-analysis" onclick="openDashboard()">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+        <rect x="3" y="3" width="7" height="7"/><rect x="14" y="3" width="7" height="7"/>
+        <rect x="3" y="14" width="7" height="7"/><rect x="14" y="14" width="7" height="7"/>
+      </svg>
+      View Analysis
+    </button>
+  </div>
+</div>
+
+<!-- MAIN -->
+<div class="main">
+
+  <!-- CHAT -->
+  <div class="chat-panel">
+    <div class="messages" id="messages">
+      <div class="empty-state" id="empty-state">
+        <div class="big">🧠</div>
+        <h2>Adaptive AI Orchestration</h2>
+        <p>Type a query — the system picks the best model automatically</p>
+      </div>
+    </div>
+
+    <div class="input-bar">
+      <div class="input-row">
+        <textarea
+          id="query-input"
+          rows="1"
+          placeholder="Ask anything — the system routes to the best model..."
+        ></textarea>
+        <button class="send-btn" id="send-btn" onclick="sendQuery()">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
+            <line x1="22" y1="2" x2="11" y2="13"/>
+            <polygon points="22 2 15 22 11 13 2 9 22 2"/>
+          </svg>
+        </button>
+      </div>
+      <div class="input-hint">Enter to send · Shift+Enter for newline</div>
+    </div>
+  </div>
+
+  <!-- SIDE PANEL -->
+  <div class="side-panel">
+    <div class="side-header">
+      Routing Intelligence
+    </div>
+    <div class="side-content" id="side-content">
+      <div class="side-empty" id="side-empty">
+        <div class="icon">⚡</div>
+        <p>Routing decisions appear here after each query</p>
+      </div>
+    </div>
+  </div>
+
+</div>
+
+<script>
+  const API_BASE = "http://localhost:8000";
+  const API_KEY  = "adaptive-ai-key-001";
+  const SESSION  = "frontend-" + Math.random().toString(36).slice(2, 9);
+
+  let queryCount = 0;
+  let isLoading  = false;
+
+  const MODEL_DISPLAY = {
+    "nova-micro": { label: "Nova Micro",    cls: "tag-nova"    },
+    "llama3-8b":  { label: "Llama 3.1 8B", cls: "tag-llama8"  },
+    "haiku":      { label: "Llama 3.3 70B", cls: "tag-llama70" },
+  };
+
+  // ── AUTO RESIZE TEXTAREA ──
+  const textarea = document.getElementById("query-input");
+  textarea.addEventListener("input", () => {
+    textarea.style.height = "auto";
+    textarea.style.height = Math.min(textarea.scrollHeight, 120) + "px";
+  });
+
+  textarea.addEventListener("keydown", (e) => {
+    if (e.key === "Enter" && !e.shiftKey) {
+      e.preventDefault();
+      if (!isLoading) sendQuery();
+    }
+  });
+
+  // ── OPEN DASHBOARD ──
+  function openDashboard() {
+    window.open("http://localhost:8501", "_blank");
+  }
+
+  // ── SEND QUERY ──
+  async function sendQuery() {
+    const text = textarea.value.trim();
+    if (!text || isLoading) return;
+
+    isLoading = true;
+    queryCount++;
+    const qNum = queryCount;
+
+    // hide empty state
+    document.getElementById("empty-state").style.display = "none";
+    document.getElementById("side-empty").style.display  = "none";
+
+    // add user message
+    appendMessage("user", text);
+    textarea.value = "";
+    textarea.style.height = "auto";
+
+    // disable send
+    const btn = document.getElementById("send-btn");
+    btn.disabled = true;
+
+    // show typing indicator
+    const typingId = "typing-" + qNum;
+    appendTyping(typingId);
+
+    try {
+      const res = await fetch(`${API_BASE}/api/chat`, {
+        method:  "POST",
+        headers: {
+          "Content-Type": "application/json",
+          "X-API-Key":    API_KEY
+        },
+        body: JSON.stringify({
+          query:      text,
+          session_id: SESSION
+        })
+      });
+
+      if (!res.ok) throw new Error(`API error ${res.status}`);
+      const data = await res.json();
+
+      // remove typing
+      removeTyping(typingId);
+
+      // add AI message
+      appendMessage("ai", data.response);
+
+      // add routing card
+      addRoutingCard(qNum, text, data);
+
+    } catch (err) {
+      removeTyping(typingId);
+      appendMessage("ai", `⚠️ Error: ${err.message}. Make sure the FastAPI server is running at ${API_BASE}`);
+      addErrorCard(qNum);
+    }
+
+    btn.disabled = false;
+    isLoading = false;
+  }
+
+  // ── APPEND MESSAGE ──
+  function appendMessage(role, text) {
+    const messages = document.getElementById("messages");
+
+    const msg = document.createElement("div");
+    msg.className = `msg ${role}`;
+
+    const avatar = document.createElement("div");
+    avatar.className = `avatar ${role}`;
+    avatar.textContent = role === "ai" ? "AI" : "U";
+
+    const bubble = document.createElement("div");
+    bubble.className = "bubble";
+    bubble.textContent = text;
+
+    msg.appendChild(avatar);
+    msg.appendChild(bubble);
+    messages.appendChild(msg);
+    messages.scrollTop = messages.scrollHeight;
+  }
+
+  // ── TYPING INDICATOR ──
+  function appendTyping(id) {
+    const messages = document.getElementById("messages");
+
+    const msg = document.createElement("div");
+    msg.className = "msg ai";
+    msg.id = id;
+
+    const avatar = document.createElement("div");
+    avatar.className = "avatar ai";
+    avatar.textContent = "AI";
+
+    const bubble = document.createElement("div");
+    bubble.className = "bubble";
+    bubble.innerHTML = `<div class="typing"><span></span><span></span><span></span></div>`;
+
+    msg.appendChild(avatar);
+    msg.appendChild(bubble);
+    messages.appendChild(msg);
+    messages.scrollTop = messages.scrollHeight;
+  }
+
+  function removeTyping(id) {
+    const el = document.getElementById(id);
+    if (el) el.remove();
+  }
+
+  // ── ROUTING CARD ──
+  function addRoutingCard(qNum, query, data) {
+    const side = document.getElementById("side-content");
+
+    const model   = data.model_used || "unknown";
+    const mInfo   = MODEL_DISPLAY[model] || { label: model, cls: "tag-default" };
+    const lat     = data.latency_ms || 0;
+    const strat   = data.strategy_used || "—";
+    const quality = data.quality_score || 0;
+    const qId     = data.query_id || "—";
+
+    // complexity — infer from model
+    const complexityMap = { "nova-micro": "low", "llama3-8b": "medium", "haiku": "high" };
+    const complexity = complexityMap[model] || "—";
+    const compCls    = { low: "tag-low", medium: "tag-medium", high: "tag-high" }[complexity] || "tag-default";
+
+    const card = document.createElement("div");
+    card.className = "routing-card active";
+    card.innerHTML = `
+      <div class="routing-card-title">
+        Routing Decision
+        <span class="query-num">#${qId}</span>
+      </div>
+      <div class="routing-rows">
+        <div class="routing-row">
+          <span class="routing-label">Model</span>
+          <span class="routing-value ${mInfo.cls}">${mInfo.label}</span>
+        </div>
+        <div class="routing-row">
+          <span class="routing-label">Complexity</span>
+          <span class="routing-value ${compCls}">${complexity}</span>
+        </div>
+        <div class="routing-row">
+          <span class="routing-label">Strategy</span>
+          <span class="routing-value tag-default">${strat}</span>
+        </div>
+        <div class="routing-row">
+          <span class="routing-label">Latency</span>
+          <span class="routing-value tag-default">${lat} ms</span>
+        </div>
+        <div class="routing-row quality-bar-wrap">
+          <span class="routing-label">Quality (prev)</span>
+          <span class="routing-value tag-default">${quality > 0 ? quality.toFixed(2) : "evaluating…"}</span>
+        </div>
+        ${quality > 0 ? `
+        <div>
+          <div class="quality-bar-bg">
+            <div class="quality-bar-fill" style="width:${quality * 100}%"></div>
+          </div>
+        </div>` : ""}
+      </div>
+    `;
+
+    // insert at top
+    side.insertBefore(card, side.firstChild);
+
+    // de-highlight old cards
+    setTimeout(() => card.classList.remove("active"), 2000);
+  }
+
+  function addErrorCard(qNum) {
+    const side = document.getElementById("side-content");
+    const card = document.createElement("div");
+    card.className = "routing-card";
+    card.innerHTML = `
+      <div class="routing-card-title">Routing Failed <span class="query-num">#${qNum}</span></div>
+      <div class="routing-rows">
+        <div class="routing-row">
+          <span class="routing-label">Status</span>
+          <span class="routing-value tag-high">Error</span>
+        </div>
+        <div class="routing-row">
+          <span class="routing-label">Check</span>
+          <span class="routing-value tag-default">Server running?</span>
+        </div>
+      </div>
+    `;
+    side.insertBefore(card, side.firstChild);
+  }
+
+  // ── CHECK API STATUS ──
+  async function checkStatus() {
+    const badge = document.getElementById("status-badge");
+    try {
+      const res = await fetch(`${API_BASE}/api/health`);
+      if (res.ok) {
+        badge.textContent = "● API Connected";
+        badge.style.color = "#00ffa3";
+      } else {
+        throw new Error();
+      }
+    } catch {
+      badge.textContent = "● API Offline";
+      badge.style.color = "#ff6b9d";
+    }
+  }
+
+  checkStatus();
+  setInterval(checkStatus, 30000);
+</script>
+</body>
+</html>
