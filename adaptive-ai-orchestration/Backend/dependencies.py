@@ -1,30 +1,40 @@
-# backend/dependencies.py
+# Backend/dependencies.py
 
-from fastapi import HTTPException, Security, Request
+from fastapi import HTTPException, Security
 from fastapi.security import APIKeyHeader
 from slowapi import Limiter
 from slowapi.util import get_remote_address
 from dotenv import load_dotenv
+import hashlib
 import os
 
 load_dotenv()
 
 # ──────────────────────────────────────────
 # API KEY SETUP
+# Keys are stored as SHA-256 hashes in .env
+# Never stored or compared as plaintext
 # ──────────────────────────────────────────
 
-# The header name where API key must be sent
 API_KEY_HEADER = APIKeyHeader(name="X-API-Key", auto_error=False)
 
-# Load valid API keys from .env
-# Multiple keys supported — comma separated
-VALID_API_KEYS = os.getenv("API_KEYS", "").split(",")
+# Load hashed keys from .env (comma separated)
+HASHED_API_KEYS = [
+    k.strip()
+    for k in os.getenv("API_KEY_HASHES", "").split(",")
+    if k.strip()
+]
+
+
+def _hash_key(raw_key: str) -> str:
+    """SHA-256 hash of an API key."""
+    return hashlib.sha256(raw_key.encode()).hexdigest()
 
 
 def verify_api_key(api_key: str = Security(API_KEY_HEADER)) -> str:
     """
-    Checks if the request has a valid API key in the header.
-    Called automatically by FastAPI on every protected endpoint.
+    Verifies API key by comparing its SHA-256 hash
+    against stored hashes. Raw key is never stored.
     Raises 403 if key is missing or invalid.
     """
     if not api_key:
@@ -32,20 +42,24 @@ def verify_api_key(api_key: str = Security(API_KEY_HEADER)) -> str:
             status_code=403,
             detail="No API key provided. Include X-API-Key in your request header."
         )
-    if api_key not in VALID_API_KEYS:
+
+    incoming_hash = _hash_key(api_key)
+
+    if incoming_hash not in HASHED_API_KEYS:
         raise HTTPException(
             status_code=403,
             detail="Invalid API key."
         )
-    return api_key
+
+    # Return hash (never return raw key)
+    return incoming_hash
 
 
 # ──────────────────────────────────────────
-# RATE LIMITER SETUP
-# ──────────────────────────────────────────
-
-# Limits requests by IP address
+# RATE LIMITER
 # 10 requests per minute per IP
+# ──────────────────────────────────────────
+
 limiter = Limiter(key_func=get_remote_address, default_limits=["10/minute"])
 
 
@@ -54,10 +68,18 @@ limiter = Limiter(key_func=get_remote_address, default_limits=["10/minute"])
 # ──────────────────────────────────────────
 
 if __name__ == "__main__":
-    # Test: check API keys loaded correctly
-    if VALID_API_KEYS and VALID_API_KEYS[0]:
-        print(f"✅ API keys loaded: {len(VALID_API_KEYS)} key(s) found")
+    if HASHED_API_KEYS:
+        print(f"✅ {len(HASHED_API_KEYS)} hashed API key(s) loaded")
+        print(f"   Hash preview: {HASHED_API_KEYS[0][:16]}...")
     else:
-        print("⚠️  No API keys found in .env — add API_KEYS to your .env file")
+        print("⚠️  No API_KEY_HASHES found in .env")
+
+    # Test: verify a known key works
+    test_key  = "adaptive-ai-key-001"
+    test_hash = _hash_key(test_key)
+    if test_hash in HASHED_API_KEYS:
+        print(f"✅ Test key verified correctly via hash")
+    else:
+        print(f"⚠️  Test key hash not found — check your .env")
 
     print("✅ dependencies.py working correctly!")

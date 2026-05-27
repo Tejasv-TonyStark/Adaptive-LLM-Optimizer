@@ -1,6 +1,6 @@
 # Backend/main.py
 
-from fastapi import FastAPI, Depends, Request, BackgroundTasks
+from fastapi import FastAPI, Depends, Request, BackgroundTasks, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from slowapi.errors import RateLimitExceeded
 from slowapi import _rate_limit_exceeded_handler
@@ -21,6 +21,7 @@ from core.orchestrator import orchestrate
 from core.decision_engine import select_best_model
 from Execution.Execution_layer import execute_query
 from RAG.retriever import retrieve
+from Security.Security_Guard import inspect_query
 
 import time
 
@@ -37,40 +38,47 @@ app = FastAPI(
 app.state.limiter = limiter
 app.add_exception_handler(RateLimitExceeded, _rate_limit_exceeded_handler)
 
+# ──────────────────────────────────────────
+# CORS — locked to known origins only
+# No wildcard — only your frontend and
+# Streamlit dashboard can call this API
+# ──────────────────────────────────────────
+
+ALLOWED_ORIGINS = [
+    "http://localhost:8501",      # Streamlit dashboard
+    "http://127.0.0.1:8501",
+    "http://localhost:8000",      # FastAPI docs (Swagger)
+    "http://127.0.0.1:8000",
+    "http://localhost:3000",      # In case of future React frontend
+    "null",                       # file:// origin (local HTML file)
+]
+
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],
-    allow_methods=["*"],
-    allow_headers=["*"]
+    allow_origins     = ALLOWED_ORIGINS,
+    allow_credentials = True,
+    allow_methods     = ["GET", "POST"],   # only what we use
+    allow_headers     = ["Content-Type", "X-API-Key"],
 )
 
 
 # ──────────────────────────────────────────
 # BACKGROUND EVALUATION + LEARNING
-# Runs after response is sent — user never waits
 # ──────────────────────────────────────────
 
 def run_evaluation(query_id: int, query: str,
                    response: str, context: str,
                    model_used: str, complexity: str,
                    latency_ms: int):
-    """
-    Runs LLM judge evaluation in background.
-    Saves quality scores to evaluations table.
-    Then updates probability table via learning engine.
-    Called after every chat response automatically.
-    """
     from Evaluation.Evaluator import evaluate_response
     from Learning.learning import update_model_probabilities
     from database.connection import SessionLocal
 
     db = SessionLocal()
     try:
-        # ── Step 1: Evaluate response quality ──
         scores = evaluate_response(query, response, context)
 
         if scores["success"]:
-            # ── Step 2: Save evaluation scores ──
             crud.save_evaluation(
                 db            = db,
                 query_id      = query_id,
@@ -83,7 +91,6 @@ def run_evaluation(query_id: int, query: str,
             print(f"✅ Evaluation saved for query {query_id} "
                   f"— quality={scores['quality_score']}")
 
-            # ── Step 3: Update probabilities via learning engine ──
             update_result = update_model_probabilities(
                 db            = db,
                 model         = model_used,
@@ -112,7 +119,6 @@ def run_evaluation(query_id: int, query: str,
 
 @app.get("/api/health", response_model=HealthResponse)
 def health_check(db: Session = Depends(get_db)):
-    """Checks if system and database are alive."""
     try:
         db.execute(text("SELECT 1"))
         db_status = "connected"
@@ -139,41 +145,51 @@ def chat(
     db: Session = Depends(get_db),
     api_key: str = Depends(verify_api_key)
 ):
-    """
-    Full pipeline:
-    1. Orchestrate     → intent + complexity + strategy
-    2. Decision Engine → best model from probability scores
-    3. RAG             → retrieve document context if needed
-    4. Execute         → call Bedrock model
-    5. Save            → store to database
-    6. Audit log       → record request details
-    7. Evaluate        → background LLM judge (async)
-                         + learning engine updates probabilities
-    """
     start_time = time.time()
 
+    # ── Step 0: Security Guard ──
+    routing_preview   = orchestrate(body.query)
+    retrieval_preview = routing_preview["retrieval_needed"]
+
+    security = inspect_query(body.query, retrieval_needed=retrieval_preview)
+
+    if not security["safe"]:
+        crud.save_audit_log(
+            db         = db,
+            event_type = "blocked",
+            detail     = {
+                "session_id": body.session_id,
+                "reason":     security["reason"],
+                "query":      body.query[:200]
+            },
+            api_key    = api_key
+        )
+        raise HTTPException(status_code=400, detail=security["reason"])
+
+    clean_query = security["clean_query"]
+
     # ── Step 1: Orchestrate ──
-    routing            = orchestrate(body.query)
+    routing            = orchestrate(clean_query)
     intent             = routing["intent"]
     complexity         = routing["complexity"]
     strategy           = routing["strategy"]
     execution_strategy = routing["execution_strategy"]
     retrieval_needed   = routing["retrieval_needed"]
 
-    # ── Step 2: Decision Engine picks model ──
+    # ── Step 2: Decision Engine ──
     decision = select_best_model(db, complexity)
     model    = decision["selected_model"]
 
-    # ── Step 3: RAG retrieval if needed ──
+    # ── Step 3: RAG retrieval ──
     context = None
     if retrieval_needed:
-        retrieval_result = retrieve(body.query)
-        context          = retrieval_result["context"] \
-                           if retrieval_result["found"] else None
+        retrieval_result = retrieve(clean_query)
+        context = retrieval_result["context"] \
+                  if retrieval_result["found"] else None
 
     # ── Step 4: Execute ──
     result        = execute_query(
-        query    = body.query,
+        query    = clean_query,
         model    = model,
         strategy = strategy,
         context  = context
@@ -184,11 +200,11 @@ def chat(
     fallback_used = result["fallback_used"]
     latency_ms    = int((time.time() - start_time) * 1000)
 
-    # ── Step 5: Save to database ──
+    # ── Step 5: Save ──
     saved_query = crud.save_query(
         db            = db,
         session_id    = body.session_id,
-        query_text    = body.query,
+        query_text    = clean_query,
         intent        = intent,
         complexity    = complexity,
         strategy      = execution_strategy,
@@ -217,14 +233,11 @@ def chat(
         api_key    = api_key
     )
 
-    # ── Step 7: Background evaluation + learning ──
-    # User gets response immediately
-    # Judge runs quietly in background
-    # Learning engine updates probabilities after judge finishes
+    # ── Step 7: Background evaluation ──
     background_tasks.add_task(
         run_evaluation,
         query_id   = saved_query.id,
-        query      = body.query,
+        query      = clean_query,
         response   = response_text,
         context    = context,
         model_used = model_used,
@@ -252,18 +265,13 @@ def submit_feedback(
     db: Session = Depends(get_db),
     api_key: str = Depends(verify_api_key)
 ):
-    """Receives user rating (1-5 stars) for a response."""
     crud.save_feedback(
         db       = db,
         query_id = body.query_id,
         rating   = body.rating,
         comment  = body.comment
     )
-
-    return FeedbackResponse(
-        success = True,
-        message = "Feedback saved successfully."
-    )
+    return FeedbackResponse(success=True, message="Feedback saved successfully.")
 
 
 # ──────────────────────────────────────────
@@ -275,19 +283,16 @@ def get_metrics(
     db: Session = Depends(get_db),
     api_key: str = Depends(verify_api_key)
 ):
-    """Returns system performance statistics."""
     total_queries = db.query(Query).count()
     avg_latency   = db.query(func.avg(Query.latency_ms)).scalar() or 0.0
     avg_quality   = db.query(func.avg(Evaluation.quality_score)).scalar() or 0.0
 
     strategy_rows = db.query(
-        Query.strategy,
-        func.count(Query.id)
+        Query.strategy, func.count(Query.id)
     ).group_by(Query.strategy).all()
 
     model_rows = db.query(
-        Query.model_used,
-        func.count(Query.id)
+        Query.model_used, func.count(Query.id)
     ).group_by(Query.model_used).all()
 
     return MetricsResponse(
@@ -308,7 +313,6 @@ def get_probabilities(
     db: Session = Depends(get_db),
     api_key: str = Depends(verify_api_key)
 ):
-    """Returns current probability routing table."""
     rows = crud.get_all_probabilities(db)
     return [
         ProbabilityResponse(
