@@ -80,7 +80,7 @@ class MetricsResponse(BaseModel):
     total_tokens:          int             = 0
     avg_tokens_per_query:  float           = 0.0
     total_estimated_cost:  float           = 0.0
-    token_stats_by_model:  list[ModelTokenStats] = []
+    token_stats_by_model:  list[ModelTokenStats] = Field(default_factory=list)
 
 
 class ProbabilityResponse(BaseModel):

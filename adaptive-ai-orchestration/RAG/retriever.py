@@ -8,6 +8,7 @@ from RAG.vector_store import search_index
 # ──────────────────────────────────────────
 
 SIMILARITY_THRESHOLD = 0.75  # raised from 0.70
+MAX_CONTEXT_CHUNKS = 5
 
 def retrieve(query: str, top_k: int = 5) -> dict:
     query_embedding = embed_query(query)
