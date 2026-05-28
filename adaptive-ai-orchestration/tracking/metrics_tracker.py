@@ -30,7 +30,7 @@ def get_queries_per_model(db: Session) -> dict:
 def get_avg_quality_per_model(db: Session) -> dict:
     """
     Joins queries + evaluations and returns average quality score per model.
-    Example: { "nova-micro": 0.91, "llama3-8b": 0.74 }
+    Example: { "nova-micro": { "avg_quality": 0.91, "eval_count": 10 } }
     """
     rows = (
         db.query(
@@ -44,8 +44,8 @@ def get_avg_quality_per_model(db: Session) -> dict:
     )
     return {
         row[0]: {
-            "avg_quality":  round(float(row[1]), 4),
-            "eval_count":   row[2]
+            "avg_quality": round(float(row[1]), 4),
+            "eval_count":  row[2]
         }
         for row in rows
     }
@@ -57,8 +57,7 @@ def get_avg_quality_per_model(db: Session) -> dict:
 
 def get_avg_latency_per_model(db: Session) -> dict:
     """
-    Returns average response time in ms per model.
-    Example: { "nova-micro": 820, "llama3-8b": 2100 }
+    Returns average / min / max response time in ms per model.
     """
     rows = (
         db.query(
@@ -86,8 +85,7 @@ def get_avg_latency_per_model(db: Session) -> dict:
 
 def get_strategy_breakdown(db: Session) -> dict:
     """
-    Returns how often each routing strategy was used.
-    Example: { "direct": 14, "rag_enhanced": 6 }
+    Returns how often each routing strategy was used (count + %).
     """
     rows = (
         db.query(Query.strategy, func.count(Query.id))
@@ -116,7 +114,6 @@ def get_probability_table(db: Session) -> list:
         Probability.complexity,
         Probability.model
     ).all()
-
     return [
         {
             "model":        row.model,
@@ -147,26 +144,91 @@ def get_complexity_breakdown(db: Session) -> dict:
 
 
 # ──────────────────────────────────────────
-# 7. FULL SUMMARY — single call for dashboard
+# 7. TOKEN STATS — GLOBAL (NEW)
+# ──────────────────────────────────────────
+
+def get_token_stats_global(db: Session) -> dict:
+    """
+    System-wide token and cost totals.
+    Used for KPI cards on the dashboard.
+
+    Returns:
+        total_tokens        — sum of all total_tokens across queries
+        avg_tokens_per_query — mean tokens per query
+        total_estimated_cost — sum of estimated_cost in USD
+    """
+    result = db.query(
+        func.sum(Query.total_tokens).label("total_tokens"),
+        func.avg(Query.total_tokens).label("avg_tokens"),
+        func.sum(Query.estimated_cost).label("total_cost"),
+    ).one()
+
+    return {
+        "total_tokens":         int(result.total_tokens  or 0),
+        "avg_tokens_per_query": round(float(result.avg_tokens or 0), 1),
+        "total_estimated_cost": round(float(result.total_cost or 0), 6),
+    }
+
+
+# ──────────────────────────────────────────
+# 8. TOKEN STATS — PER MODEL (NEW)
+# ──────────────────────────────────────────
+
+def get_token_stats_per_model(db: Session) -> list[dict]:
+    """
+    Per-model token usage and cost breakdown.
+    Used for cost-per-model and token-per-model dashboard charts.
+
+    Returns list of:
+        model, input_tokens, output_tokens, total_tokens,
+        total_cost (USD), avg_tokens_per_query
+    """
+    rows = db.query(
+        Query.model_used,
+        func.sum(Query.input_tokens).label("input_tokens"),
+        func.sum(Query.output_tokens).label("output_tokens"),
+        func.sum(Query.total_tokens).label("total_tokens"),
+        func.sum(Query.estimated_cost).label("total_cost"),
+        func.avg(Query.total_tokens).label("avg_tokens"),
+    ).group_by(Query.model_used).all()
+
+    return [
+        {
+            "model":        row.model_used,
+            "input_tokens":  int(row.input_tokens  or 0),
+            "output_tokens": int(row.output_tokens or 0),
+            "total_tokens":  int(row.total_tokens  or 0),
+            "total_cost":    round(float(row.total_cost or 0), 6),
+            "avg_tokens":    round(float(row.avg_tokens or 0), 1),
+        }
+        for row in rows
+    ]
+
+
+# ──────────────────────────────────────────
+# 9. FULL SUMMARY — single call for dashboard
 # ──────────────────────────────────────────
 
 def get_full_metrics(db: Session) -> dict:
     """
     Returns all metrics in one call.
-    Used by the Streamlit dashboard (Module 10).
+    Used by the Streamlit dashboard.
     """
     return {
-        "queries_per_model":    get_queries_per_model(db),
-        "avg_quality_per_model":get_avg_quality_per_model(db),
-        "avg_latency_per_model":get_avg_latency_per_model(db),
-        "strategy_breakdown":   get_strategy_breakdown(db),
-        "complexity_breakdown": get_complexity_breakdown(db),
-        "probability_table":    get_probability_table(db)
+        "queries_per_model":     get_queries_per_model(db),
+        "avg_quality_per_model": get_avg_quality_per_model(db),
+        "avg_latency_per_model": get_avg_latency_per_model(db),
+        "strategy_breakdown":    get_strategy_breakdown(db),
+        "complexity_breakdown":  get_complexity_breakdown(db),
+        "probability_table":     get_probability_table(db),
+        # Token metrics (NEW)
+        "token_stats_global":    get_token_stats_global(db),
+        "token_stats_per_model": get_token_stats_per_model(db),
     }
 
 
 # ──────────────────────────────────────────
-# QUICK TEST — run directly to verify
+# QUICK TEST
 # ──────────────────────────────────────────
 
 if __name__ == "__main__":

@@ -1,4 +1,4 @@
-# backend/schemas.py
+# Backend/schemas.py
 
 from pydantic import BaseModel, Field
 from typing import Optional
@@ -9,10 +9,6 @@ from typing import Optional
 # ──────────────────────────────────────────
 
 class ChatRequest(BaseModel):
-    """
-    Shape of every incoming question from the user.
-    FastAPI automatically validates this before touching our code.
-    """
     query: str = Field(
         ...,
         min_length=3,
@@ -28,12 +24,9 @@ class ChatRequest(BaseModel):
 
 
 class FeedbackRequest(BaseModel):
-    """
-    Shape of user feedback submission.
-    """
     query_id: int = Field(..., description="ID of the query being rated")
-    rating: int = Field(..., ge=1, le=5, description="Rating from 1 to 5")
-    comment: Optional[str] = Field(None, max_length=500, description="Optional comment")
+    rating:   int = Field(..., ge=1, le=5, description="Rating from 1 to 5")
+    comment:  Optional[str] = Field(None, max_length=500, description="Optional comment")
 
 
 # ──────────────────────────────────────────
@@ -41,54 +34,61 @@ class FeedbackRequest(BaseModel):
 # ──────────────────────────────────────────
 
 class ChatResponse(BaseModel):
-    """
-    Shape of every response sent back to the user.
-    """
-    response: str
+    response:      str
     strategy_used: str
-    model_used: str
-    latency_ms: int
+    model_used:    str
+    latency_ms:    int
     quality_score: float
-    query_id: int
+    query_id:      int
+
+    # ── Token fields (NEW) ─────────────────
+    input_tokens:   Optional[int]   = None   # prompt tokens sent to model
+    output_tokens:  Optional[int]   = None   # tokens in model response
+    total_tokens:   Optional[int]   = None   # input + output
+    estimated_cost: Optional[float] = None   # USD cost for this query
 
 
 class HealthResponse(BaseModel):
-    """
-    Shape of health check response.
-    """
-    status: str
+    status:   str
     database: str
-    message: str
+    message:  str
 
 
 class FeedbackResponse(BaseModel):
-    """
-    Shape of feedback submission confirmation.
-    """
     success: bool
     message: str
 
 
+# ── Per-model token breakdown ─────────────
+class ModelTokenStats(BaseModel):
+    model:         str
+    input_tokens:  int
+    output_tokens: int
+    total_tokens:  int
+    total_cost:    float
+    avg_tokens:    float
+
+
 class MetricsResponse(BaseModel):
-    """
-    Shape of system metrics response.
-    """
-    total_queries: int
-    average_latency_ms: float
+    total_queries:         int
+    average_latency_ms:    float
     average_quality_score: float
-    strategy_breakdown: dict
-    model_breakdown: dict
+    strategy_breakdown:    dict
+    model_breakdown:       dict
+
+    # ── Token / cost aggregates (NEW) ──────
+    total_tokens:          int             = 0
+    avg_tokens_per_query:  float           = 0.0
+    total_estimated_cost:  float           = 0.0
+    token_stats_by_model:  list[ModelTokenStats] = []
 
 
 class ProbabilityResponse(BaseModel):
-    """
-    Shape of a single probability row.
-    """
-    model: str
-    complexity: str
-    p_quality: float
-    p_latency: float
-    p_cost: float
+    model:        str
+    complexity:   str
+    p_quality:    float
+    p_latency:    float
+    p_cost:       float
     sample_count: int
 
 
@@ -97,20 +97,17 @@ class ProbabilityResponse(BaseModel):
 # ──────────────────────────────────────────
 
 if __name__ == "__main__":
-    # Test: create a valid chat request
     req = ChatRequest(query="What is the leave policy?", session_id="test-123")
     print(f"✅ ChatRequest valid: {req}")
 
-    # Test: invalid request — too short
     try:
         bad_req = ChatRequest(query="Hi", session_id="test-123")
-    except Exception as e:
-        print(f"✅ Validation working — short query rejected")
+    except Exception:
+        print("✅ Validation working — short query rejected")
 
-    # Test: invalid feedback — rating out of range
     try:
         bad_feedback = FeedbackRequest(query_id=1, rating=6)
-    except Exception as e:
-        print(f"✅ Validation working — rating 6 rejected")
+    except Exception:
+        print("✅ Validation working — rating 6 rejected")
 
     print("✅ schemas.py working correctly!")

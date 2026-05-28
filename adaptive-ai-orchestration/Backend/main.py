@@ -6,12 +6,13 @@ from slowapi.errors import RateLimitExceeded
 from slowapi import _rate_limit_exceeded_handler
 from sqlalchemy.orm import Session
 from sqlalchemy import func, text
+from typing import Optional
 
 from Backend.schemas import (
     ChatRequest, ChatResponse,
     FeedbackRequest, FeedbackResponse,
     HealthResponse, MetricsResponse,
-    ProbabilityResponse
+    ModelTokenStats, ProbabilityResponse
 )
 from Backend.dependencies import verify_api_key, limiter
 from database.connection import get_db
@@ -26,6 +27,73 @@ from Security.Security_Guard import inspect_query
 import time
 
 # ──────────────────────────────────────────
+# MODEL PRICING CONFIG (USD per 1000 tokens)
+# Update these when Bedrock pricing changes.
+# Keys match model_used values in the DB.
+# ──────────────────────────────────────────
+
+MODEL_PRICING = {
+    "nova-micro": {"input": 0.000035, "output": 0.00014},   # Amazon Nova Micro
+    "llama3-8b":  {"input": 0.00022,  "output": 0.00022},   # Meta Llama 3.1 8B
+    "haiku":      {"input": 0.00072,  "output": 0.00072},   # Meta Llama 3.3 70B
+    "default":   {"input": 0.0002,  "output": 0.0002},   # fallback for unknown models
+}
+
+
+def estimate_tokens_from_text(text: str) -> int:
+    """
+    Fallback token estimator when Bedrock usage metadata is unavailable.
+    Rule of thumb: 1 token ≈ 4 characters for English text.
+    """
+    return max(1, len(text) // 4)
+
+
+def calculate_cost(model: str, input_tokens: int, output_tokens: int) -> float:
+    """
+    Calculate USD cost for a single query using per-model pricing.
+    Returns cost rounded to 8 decimal places to avoid float precision loss.
+    """
+    pricing      = MODEL_PRICING.get(model, MODEL_PRICING["default"])
+    input_cost   = (input_tokens  / 1000) * pricing["input"]
+    output_cost  = (output_tokens / 1000) * pricing["output"]
+    return round(input_cost + output_cost, 8)
+
+
+def resolve_token_usage(
+    result:     dict,
+    query_text: str,
+    model:      str,
+) -> dict:
+    """
+    Extract token counts from the execution result.
+    Priority:
+      1. Bedrock usage metadata (accurate)
+      2. Fallback estimation from text length (approximate)
+
+    Returns a dict with input_tokens, output_tokens,
+    total_tokens, and estimated_cost.
+    """
+    # ── Try Bedrock metadata first ──────────
+    input_tokens  = result.get("input_tokens")
+    output_tokens = result.get("output_tokens")
+
+    if input_tokens is None or output_tokens is None:
+        # Fallback: estimate from text lengths
+        input_tokens  = estimate_tokens_from_text(query_text)
+        output_tokens = estimate_tokens_from_text(result.get("response", ""))
+
+    total_tokens   = input_tokens + output_tokens
+    estimated_cost = calculate_cost(model, input_tokens, output_tokens)
+
+    return {
+        "input_tokens":   input_tokens,
+        "output_tokens":  output_tokens,
+        "total_tokens":   total_tokens,
+        "estimated_cost": estimated_cost,
+    }
+
+
+# ──────────────────────────────────────────
 # APP SETUP
 # ──────────────────────────────────────────
 
@@ -38,26 +106,20 @@ app = FastAPI(
 app.state.limiter = limiter
 app.add_exception_handler(RateLimitExceeded, _rate_limit_exceeded_handler)
 
-# ──────────────────────────────────────────
-# CORS — locked to known origins only
-# No wildcard — only your frontend and
-# Streamlit dashboard can call this API
-# ──────────────────────────────────────────
-
 ALLOWED_ORIGINS = [
-    "http://localhost:8501",      # Streamlit dashboard
+    "http://localhost:8501",
     "http://127.0.0.1:8501",
-    "http://localhost:8000",      # FastAPI docs (Swagger)
+    "http://localhost:8000",
     "http://127.0.0.1:8000",
-    "http://localhost:3000",      # In case of future React frontend
-    "null",                       # file:// origin (local HTML file)
+    "http://localhost:3000",
+    "null",
 ]
 
 app.add_middleware(
     CORSMiddleware,
     allow_origins     = ALLOWED_ORIGINS,
     allow_credentials = True,
-    allow_methods     = ["GET", "POST"],   # only what we use
+    allow_methods     = ["GET", "POST"],
     allow_headers     = ["Content-Type", "X-API-Key"],
 )
 
@@ -122,13 +184,13 @@ def health_check(db: Session = Depends(get_db)):
     try:
         db.execute(text("SELECT 1"))
         db_status = "connected"
-    except:
+    except Exception:
         db_status = "disconnected"
 
     return HealthResponse(
-        status="ok",
-        database=db_status,
-        message="Adaptive AI Orchestration System is running"
+        status   = "ok",
+        database = db_status,
+        message  = "Adaptive AI Orchestration System is running"
     )
 
 
@@ -188,7 +250,7 @@ def chat(
                   if retrieval_result["found"] else None
 
     # ── Step 4: Execute ──
-    result        = execute_query(
+    result = execute_query(
         query    = clean_query,
         model    = model,
         strategy = strategy,
@@ -200,18 +262,26 @@ def chat(
     fallback_used = result["fallback_used"]
     latency_ms    = int((time.time() - start_time) * 1000)
 
+    # ── Step 4b: Resolve token usage (NEW) ──
+    token_info = resolve_token_usage(result, clean_query, model_used)
+
     # ── Step 5: Save ──
     saved_query = crud.save_query(
-        db            = db,
-        session_id    = body.session_id,
-        query_text    = clean_query,
-        intent        = intent,
-        complexity    = complexity,
-        strategy      = execution_strategy,
-        model_used    = model_used,
-        response      = response_text,
-        latency_ms    = latency_ms,
-        fallback_used = fallback_used
+        db             = db,
+        session_id     = body.session_id,
+        query_text     = clean_query,
+        intent         = intent,
+        complexity     = complexity,
+        strategy       = execution_strategy,
+        model_used     = model_used,
+        response       = response_text,
+        latency_ms     = latency_ms,
+        fallback_used  = fallback_used,
+        # Token fields passed through
+        input_tokens   = token_info["input_tokens"],
+        output_tokens  = token_info["output_tokens"],
+        total_tokens   = token_info["total_tokens"],
+        estimated_cost = token_info["estimated_cost"],
     )
 
     # ── Step 6: Audit log ──
@@ -228,7 +298,10 @@ def chat(
             "retrieval_needed":  retrieval_needed,
             "rag_context_found": context is not None,
             "latency_ms":        latency_ms,
-            "fallback":          fallback_used
+            "fallback":          fallback_used,
+            # Token info in audit log too
+            "total_tokens":      token_info["total_tokens"],
+            "estimated_cost":    token_info["estimated_cost"],
         },
         api_key    = api_key
     )
@@ -246,12 +319,17 @@ def chat(
     )
 
     return ChatResponse(
-        response      = response_text,
-        strategy_used = execution_strategy,
-        model_used    = model_used,
-        latency_ms    = latency_ms,
-        quality_score = 0.0,
-        query_id      = saved_query.id
+        response        = response_text,
+        strategy_used   = execution_strategy,
+        model_used      = model_used,
+        latency_ms      = latency_ms,
+        quality_score   = 0.0,
+        query_id        = saved_query.id,
+        # Token fields in response (NEW)
+        input_tokens    = token_info["input_tokens"],
+        output_tokens   = token_info["output_tokens"],
+        total_tokens    = token_info["total_tokens"],
+        estimated_cost  = token_info["estimated_cost"],
     )
 
 
@@ -295,12 +373,23 @@ def get_metrics(
         Query.model_used, func.count(Query.id)
     ).group_by(Query.model_used).all()
 
+    # ── Token / cost aggregates (NEW) ──────
+    token_stats       = crud.get_token_stats(db)
+    model_token_stats = crud.get_token_stats_by_model(db)
+
     return MetricsResponse(
         total_queries         = total_queries,
         average_latency_ms    = round(avg_latency, 2),
         average_quality_score = round(avg_quality, 4),
         strategy_breakdown    = {row[0]: row[1] for row in strategy_rows},
-        model_breakdown       = {row[0]: row[1] for row in model_rows}
+        model_breakdown       = {row[0]: row[1] for row in model_rows},
+        # Token aggregates
+        total_tokens          = token_stats["total_tokens"],
+        avg_tokens_per_query  = token_stats["avg_tokens_per_query"],
+        total_estimated_cost  = token_stats["total_estimated_cost"],
+        token_stats_by_model  = [
+            ModelTokenStats(**row) for row in model_token_stats
+        ],
     )
 
 

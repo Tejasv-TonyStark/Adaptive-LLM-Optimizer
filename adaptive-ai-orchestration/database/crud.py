@@ -1,32 +1,51 @@
 # database/crud.py
 
 from sqlalchemy.orm import Session
-from sqlalchemy import update
+from sqlalchemy import update, func
 from database.models import Query, Evaluation, Probability, AuditLog, Feedback
 from datetime import datetime
+from typing import Optional
 
 
 # ──────────────────────────────────────────
 # QUERIES
 # ──────────────────────────────────────────
 
-def save_query(db: Session, session_id: str, query_text: str, intent: str,
-               complexity: str, strategy: str, model_used: str,
-               response: str, latency_ms: int, fallback_used: bool = False) -> Query:
+def save_query(
+    db: Session,
+    session_id: str,
+    query_text: str,
+    intent: str,
+    complexity: str,
+    strategy: str,
+    model_used: str,
+    response: str,
+    latency_ms: int,
+    fallback_used: bool = False,
+    # ── Token fields (NEW) ──────────────────
+    input_tokens: Optional[int]   = None,
+    output_tokens: Optional[int]  = None,
+    total_tokens: Optional[int]   = None,
+    estimated_cost: Optional[float] = None,
+) -> Query:
     """
     Save a new query and its response to the database.
-    Called after every user question is answered.
+    Token fields are optional — populated from Bedrock metadata or fallback estimation.
     """
     query = Query(
-        session_id    = session_id,
-        query_text    = query_text,
-        intent        = intent,
-        complexity    = complexity,
-        strategy      = strategy,
-        model_used    = model_used,
-        response      = response,
-        latency_ms    = latency_ms,
-        fallback_used = fallback_used
+        session_id     = session_id,
+        query_text     = query_text,
+        intent         = intent,
+        complexity     = complexity,
+        strategy       = strategy,
+        model_used     = model_used,
+        response       = response,
+        latency_ms     = latency_ms,
+        fallback_used  = fallback_used,
+        input_tokens   = input_tokens,
+        output_tokens  = output_tokens,
+        total_tokens   = total_tokens,
+        estimated_cost = estimated_cost,
     )
     db.add(query)
     db.commit()
@@ -40,6 +59,68 @@ def get_query_by_id(db: Session, query_id: int) -> Query:
     Used by the evaluation engine to load query details.
     """
     return db.query(Query).filter(Query.id == query_id).first()
+
+
+# ──────────────────────────────────────────
+# TOKEN / COST AGGREGATES (NEW)
+# ──────────────────────────────────────────
+
+def get_token_stats(db: Session) -> dict:
+    """
+    Aggregate token and cost metrics across all queries.
+    Called by /api/metrics to power the dashboard panels.
+    """
+    result = db.query(
+        func.sum(Query.total_tokens).label("total_tokens"),
+        func.avg(Query.total_tokens).label("avg_tokens_per_query"),
+        func.sum(Query.estimated_cost).label("total_cost"),
+    ).one()
+
+    return {
+        "total_tokens":        int(result.total_tokens  or 0),
+        "avg_tokens_per_query": round(float(result.avg_tokens_per_query or 0), 1),
+        "total_estimated_cost": round(float(result.total_cost or 0), 6),
+    }
+
+
+def get_token_stats_by_model(db: Session) -> list[dict]:
+    """
+    Per-model breakdown of token usage and cost.
+    Used for the 'cost per model' and 'tokens per model' dashboard panels.
+    """
+    rows = db.query(
+        Query.model_used,
+        func.sum(Query.input_tokens).label("input_tokens"),
+        func.sum(Query.output_tokens).label("output_tokens"),
+        func.sum(Query.total_tokens).label("total_tokens"),
+        func.sum(Query.estimated_cost).label("total_cost"),
+        func.avg(Query.total_tokens).label("avg_tokens"),
+    ).group_by(Query.model_used).all()
+
+    return [
+        {
+            "model":        row.model_used,
+            "input_tokens":  int(row.input_tokens  or 0),
+            "output_tokens": int(row.output_tokens or 0),
+            "total_tokens":  int(row.total_tokens  or 0),
+            "total_cost":    round(float(row.total_cost or 0), 6),
+            "avg_tokens":    round(float(row.avg_tokens or 0), 1),
+        }
+        for row in rows
+    ]
+
+
+def get_recent_queries(db: Session, limit: int = 20) -> list[Query]:
+    """
+    Fetch the most recent queries for the dashboard table.
+    Includes token/cost columns that are now part of the Query model.
+    """
+    return (
+        db.query(Query)
+        .order_by(Query.created_at.desc())
+        .limit(limit)
+        .all()
+    )
 
 
 # ──────────────────────────────────────────
@@ -95,7 +176,7 @@ def update_probability(db: Session, model: str, complexity: str,
     """
     Update p_quality and p_latency for a model + complexity after a query.
     Called by the Learning Engine using the Bayesian update formula.
-    Note: p_cost is NEVER updated — it stays fixed forever.
+    Note: p_cost is NOT updated here — it stays fixed as seed value.
     """
     row = get_probability(db, model, complexity)
     if row:
@@ -148,40 +229,3 @@ def save_feedback(db: Session, query_id: int,
     db.commit()
     db.refresh(feedback)
     return feedback
-
-
-# ──────────────────────────────────────────
-# TEST
-# ──────────────────────────────────────────
-
-if __name__ == "__main__":
-    from database.connection import SessionLocal
-
-    db = SessionLocal()
-
-    # Test: save a dummy query
-    q = save_query(
-        db          = db,
-        session_id  = "test-session-001",
-        query_text  = "What is the leave policy?",
-        intent      = "specific",
-        complexity  = "low",
-        strategy    = "rag",
-        model_used  = "mistral",
-        response    = "You are entitled to 18 days of annual leave.",
-        latency_ms  = 4200,
-        fallback_used = False
-    )
-    print(f"✅ Query saved — ID: {q.id}")
-
-    # Test: save a dummy audit log
-    save_audit_log(
-        db         = db,
-        event_type = "request",
-        detail     = {"query_id": q.id, "model": "mistral"},
-        api_key    = "test-key-123"
-    )
-    print("✅ Audit log saved")
-
-    db.close()
-    print("✅ crud.py working correctly!")

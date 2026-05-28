@@ -28,16 +28,20 @@ def get_bedrock_client():
     """Returns a Bedrock runtime client using credentials from .env"""
     return boto3.client(
         "bedrock-runtime",
-        region_name=REGION,
-        aws_access_key_id=os.getenv("AWS_ACCESS_KEY_ID"),
-        aws_secret_access_key=os.getenv("AWS_SECRET_ACCESS_KEY")
+        region_name          = REGION,
+        aws_access_key_id    = os.getenv("AWS_ACCESS_KEY_ID"),
+        aws_secret_access_key= os.getenv("AWS_SECRET_ACCESS_KEY")
     )
 
 
-def invoke_nova(client, prompt: str) -> str:
+def invoke_nova(client, prompt: str) -> dict:
     """
     Calls Amazon Nova Micro.
     Used for: fast mode, low complexity queries.
+
+    Returns:
+        dict with keys: text, input_tokens, output_tokens
+        Nova includes usage metadata in every response — always exact counts.
     """
     body = {
         "messages": [
@@ -46,20 +50,34 @@ def invoke_nova(client, prompt: str) -> str:
     }
 
     response = client.invoke_model(
-        modelId=MODEL_IDS["nova-micro"],
-        body=json.dumps(body),
-        contentType="application/json",
-        accept="application/json"
+        modelId     = MODEL_IDS["nova-micro"],
+        body        = json.dumps(body),
+        contentType = "application/json",
+        accept      = "application/json"
     )
 
     result = json.loads(response["body"].read())
-    return result["output"]["message"]["content"][0]["text"]
+
+    text         = result["output"]["message"]["content"][0]["text"]
+    # Nova always returns usage — safe to access directly
+    input_tokens  = result.get("usage", {}).get("inputTokens")
+    output_tokens = result.get("usage", {}).get("outputTokens")
+
+    return {
+        "text":          text,
+        "input_tokens":  input_tokens,
+        "output_tokens": output_tokens,
+    }
 
 
-def invoke_llama(client, prompt: str, model_key: str = "llama3-8b") -> str:
+def invoke_llama(client, prompt: str, model_key: str = "llama3-8b") -> dict:
     """
-    Calls Llama models — both 8B and 70B use same request format.
+    Calls Llama models — both 8B and 70B use the same request format.
     Used for: reasoning (8B) and complex/high queries (70B).
+
+    Returns:
+        dict with keys: text, input_tokens, output_tokens
+        Llama returns prompt_token_count + generation_token_count.
     """
     body = {
         "prompt":      prompt,
@@ -68,17 +86,27 @@ def invoke_llama(client, prompt: str, model_key: str = "llama3-8b") -> str:
     }
 
     response = client.invoke_model(
-        modelId=MODEL_IDS[model_key],
-        body=json.dumps(body),
-        contentType="application/json",
-        accept="application/json"
+        modelId     = MODEL_IDS[model_key],
+        body        = json.dumps(body),
+        contentType = "application/json",
+        accept      = "application/json"
     )
 
     result = json.loads(response["body"].read())
-    return result["generation"]
+
+    text          = result["generation"]
+    # Llama returns separate token count fields
+    input_tokens  = result.get("prompt_token_count")
+    output_tokens = result.get("generation_token_count")
+
+    return {
+        "text":          text,
+        "input_tokens":  input_tokens,
+        "output_tokens": output_tokens,
+    }
 
 
-def invoke_model(model: str, prompt: str) -> str:
+def invoke_model(model: str, prompt: str) -> dict:
     """
     Master routing function — calls the correct model.
 
@@ -92,7 +120,8 @@ def invoke_model(model: str, prompt: str) -> str:
         prompt: full prompt string
 
     Returns:
-        str response from model
+        dict — { text, input_tokens, output_tokens }
+        input_tokens / output_tokens are None if model didn't return them.
     """
     client = get_bedrock_client()
 
@@ -119,10 +148,10 @@ def get_embedding(text: str) -> list[float]:
     body = {"inputText": text}
 
     response = client.invoke_model(
-        modelId=EMBEDDING_MODEL_ID,
-        body=json.dumps(body),
-        contentType="application/json",
-        accept="application/json"
+        modelId     = EMBEDDING_MODEL_ID,
+        body        = json.dumps(body),
+        contentType = "application/json",
+        accept      = "application/json"
     )
 
     result = json.loads(response["body"].read())
@@ -141,8 +170,9 @@ if __name__ == "__main__":
     for model in ["nova-micro", "llama3-8b", "haiku"]:
         print(f"Testing {model}...")
         try:
-            response = invoke_model(model, test_prompt)
-            print(f"✅ {model}: {response[:100]}...")
+            result = invoke_model(model, test_prompt)
+            print(f"✅ {model}: {result['text'][:100]}...")
+            print(f"   Tokens — input: {result['input_tokens']}, output: {result['output_tokens']}")
         except Exception as e:
             print(f"❌ {model} failed: {e}")
         print()
