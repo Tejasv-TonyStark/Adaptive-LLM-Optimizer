@@ -594,9 +594,7 @@
     const quality = data.quality_score || 0;
     const qId     = data.query_id || "—";
 
-    // complexity — infer from model
-    const complexityMap = { "nova-micro": "low", "llama3-8b": "medium", "haiku": "high" };
-    const complexity = complexityMap[model] || "—";
+    const complexity = data.complexity || "—";
     const compCls    = { low: "tag-low", medium: "tag-medium", high: "tag-high" }[complexity] || "tag-default";
 
     const card = document.createElement("div");

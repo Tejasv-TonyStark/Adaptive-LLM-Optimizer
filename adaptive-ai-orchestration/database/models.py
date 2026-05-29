@@ -31,7 +31,7 @@ class Query(Base):
     intent        = Column(String(20))          # general / specific / unknown
     complexity    = Column(String(10))          # low / medium / high
     strategy      = Column(String(20))          # fast / reasoning / rag
-    model_used    = Column(String(50))          # tinyllama / phi3 / mistral
+    model_used    = Column(String(50))          # nova-micro / llama3-8b / haiku
     response      = Column(Text)
     latency_ms    = Column(Integer)
     fallback_used = Column(Boolean, default=False)

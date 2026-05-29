@@ -16,6 +16,18 @@ FALLBACK_CHAIN = {
     "nova-micro": ["llama3-8b",  "haiku"],
 }
 
+OUTPUT_TOKEN_BUDGETS = {
+    "fast":      160,
+    "reasoning": 384,
+    "rag":       320,
+    "default":   256,
+}
+
+
+def get_output_token_budget(strategy: str) -> int:
+    """Returns a practical output cap for each response strategy."""
+    return OUTPUT_TOKEN_BUDGETS.get(strategy, OUTPUT_TOKEN_BUDGETS["default"])
+
 
 def execute_query(query: str, model: str, strategy: str,
                   context: str = None) -> dict:
@@ -31,12 +43,18 @@ def execute_query(query: str, model: str, strategy: str,
         output_tokens  — response token count (from Bedrock metadata, or None)
         error          — error message if all models failed, else None
     """
-    prompt     = build_prompt(query, strategy, context)
-    start_time = time.time()
+    prompt_strategy   = "rag" if context else strategy
+    prompt            = build_prompt(query, prompt_strategy, context)
+    max_output_tokens = get_output_token_budget(prompt_strategy)
+    start_time        = time.time()
 
     # ── Primary attempt ────────────────────
     try:
-        result     = invoke_model(model, prompt)   # returns {text, input_tokens, output_tokens}
+        result     = invoke_model(
+            model,
+            prompt,
+            max_output_tokens=max_output_tokens
+        )   # returns {text, input_tokens, output_tokens}
         latency_ms = int((time.time() - start_time) * 1000)
 
         return {
@@ -58,7 +76,11 @@ def execute_query(query: str, model: str, strategy: str,
             print(f"Trying fallback → {fallback_model}")
 
             start_time = time.time()
-            result     = invoke_model(fallback_model, prompt)
+            result     = invoke_model(
+                fallback_model,
+                prompt,
+                max_output_tokens=max_output_tokens
+            )
             latency_ms = int((time.time() - start_time) * 1000)
 
             return {

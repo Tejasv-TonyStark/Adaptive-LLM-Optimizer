@@ -30,6 +30,22 @@ SYSTEM_PROMPTS = {
     ),
 }
 
+MAX_RAG_CONTEXT_CHARS = 6000
+
+
+def trim_context(context: str, max_chars: int = MAX_RAG_CONTEXT_CHARS) -> str:
+    """
+    Keeps RAG input bounded so retrieved chunks do not dominate token usage.
+    Uses a character budget as a lightweight token proxy.
+    """
+    if not context or len(context) <= max_chars:
+        return context
+
+    trimmed = context[:max_chars].rsplit("\n\n---\n\n", 1)[0].strip()
+    if not trimmed:
+        trimmed = context[:max_chars].strip()
+    return f"{trimmed}\n\n[Context truncated to fit token budget.]"
+
 
 # ──────────────────────────────────────────
 # PROMPT BUILDERS
@@ -57,6 +73,7 @@ def build_prompt(query: str, strategy: str,
     system = SYSTEM_PROMPTS.get(strategy, SYSTEM_PROMPTS["fast"])
 
     if strategy == "rag" and context:
+        context = trim_context(context)
         return (
             f"{system}\n\n"
             f"Context:\n{context}\n\n"

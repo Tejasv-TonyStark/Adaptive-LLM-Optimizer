@@ -37,6 +37,7 @@ class ChatResponse(BaseModel):
     response:      str
     strategy_used: str
     model_used:    str
+    complexity:    str
     latency_ms:    int
     quality_score: float
     query_id:      int

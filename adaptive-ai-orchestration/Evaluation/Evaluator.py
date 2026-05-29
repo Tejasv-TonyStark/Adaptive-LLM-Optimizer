@@ -195,7 +195,7 @@ def evaluate_response(query: str, response: str,
 
     try:
         # ── BUG FIX: invoke_model returns dict, extract .text ──
-        raw_output = invoke_model("haiku", prompt)
+        raw_output = invoke_model("haiku", prompt, max_output_tokens=220)
         raw_text   = raw_output["text"] if isinstance(raw_output, dict) \
                      else str(raw_output)
 

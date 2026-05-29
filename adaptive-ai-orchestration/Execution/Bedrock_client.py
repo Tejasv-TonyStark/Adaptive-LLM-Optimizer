@@ -22,6 +22,14 @@ MODEL_IDS = {
 
 EMBEDDING_MODEL_ID = "amazon.titan-embed-text-v2:0"
 REGION             = os.getenv("AWS_REGION", "us-east-1")
+DEFAULT_MAX_OUTPUT_TOKENS = 256
+
+
+def normalize_max_output_tokens(max_output_tokens: int | None) -> int:
+    """Keep generation caps inside Bedrock model parameter bounds."""
+    if max_output_tokens is None:
+        return DEFAULT_MAX_OUTPUT_TOKENS
+    return max(1, min(int(max_output_tokens), 2048))
 
 
 def get_bedrock_client():
@@ -34,7 +42,8 @@ def get_bedrock_client():
     )
 
 
-def invoke_nova(client, prompt: str) -> dict:
+def invoke_nova(client, prompt: str,
+                max_output_tokens: int | None = None) -> dict:
     """
     Calls Amazon Nova Micro.
     Used for: fast mode, low complexity queries.
@@ -46,7 +55,10 @@ def invoke_nova(client, prompt: str) -> dict:
     body = {
         "messages": [
             {"role": "user", "content": [{"text": prompt}]}
-        ]
+        ],
+        "inferenceConfig": {
+            "maxTokens": normalize_max_output_tokens(max_output_tokens)
+        }
     }
 
     response = client.invoke_model(
@@ -70,7 +82,8 @@ def invoke_nova(client, prompt: str) -> dict:
     }
 
 
-def invoke_llama(client, prompt: str, model_key: str = "llama3-8b") -> dict:
+def invoke_llama(client, prompt: str, model_key: str = "llama3-8b",
+                 max_output_tokens: int | None = None) -> dict:
     """
     Calls Llama models — both 8B and 70B use the same request format.
     Used for: reasoning (8B) and complex/high queries (70B).
@@ -81,7 +94,7 @@ def invoke_llama(client, prompt: str, model_key: str = "llama3-8b") -> dict:
     """
     body = {
         "prompt":      prompt,
-        "max_gen_len": 512,
+        "max_gen_len": normalize_max_output_tokens(max_output_tokens),
         "temperature": 0.7
     }
 
@@ -106,7 +119,8 @@ def invoke_llama(client, prompt: str, model_key: str = "llama3-8b") -> dict:
     }
 
 
-def invoke_model(model: str, prompt: str) -> dict:
+def invoke_model(model: str, prompt: str,
+                 max_output_tokens: int | None = None) -> dict:
     """
     Master routing function — calls the correct model.
 
@@ -126,13 +140,16 @@ def invoke_model(model: str, prompt: str) -> dict:
     client = get_bedrock_client()
 
     if model == "nova-micro":
-        return invoke_nova(client, prompt)
+        return invoke_nova(client, prompt, max_output_tokens)
     elif model == "llama3-8b":
-        return invoke_llama(client, prompt, model_key="llama3-8b")
+        return invoke_llama(client, prompt, model_key="llama3-8b",
+                            max_output_tokens=max_output_tokens)
     elif model == "haiku":
-        return invoke_llama(client, prompt, model_key="haiku")
+        return invoke_llama(client, prompt, model_key="haiku",
+                            max_output_tokens=max_output_tokens)
     else:
-        return invoke_llama(client, prompt, model_key="llama3-8b")
+        return invoke_llama(client, prompt, model_key="llama3-8b",
+                            max_output_tokens=max_output_tokens)
 
 
 def get_embedding(text: str) -> list[float]:

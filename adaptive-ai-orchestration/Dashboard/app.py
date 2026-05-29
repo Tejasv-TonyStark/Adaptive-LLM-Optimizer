@@ -28,7 +28,6 @@ MODEL_DISPLAY = {
     "nova-micro": "Nova Micro",
     "llama3-8b":  "Llama 3.1 8B",
     "haiku":      "Llama 3.3 70B",
-    "mistral":    "Mistral (legacy)",
     "pending":    "Pending (legacy)"
 }
 
@@ -221,7 +220,7 @@ col1, col2 = st.columns(2)
 with col1:
     st.subheader("📊 Queries per Model")
     if qpm:
-        clean_qpm = {k: v for k, v in qpm.items() if k not in ("pending", "mistral")}
+        clean_qpm = {k: v for k, v in qpm.items() if k != "pending"}
         display_keys = [display(k) for k in clean_qpm.keys()]
         fig = px.bar(
             x=display_keys, y=list(clean_qpm.values()),
@@ -281,7 +280,7 @@ with col3:
 with col4:
     st.subheader("⚡ Avg Latency per Model (ms)")
     if alpm:
-        clean_alpm = {k: v for k, v in alpm.items() if k not in ("pending", "mistral")}
+        clean_alpm = {k: v for k, v in alpm.items() if k != "pending"}
         models = [display(k) for k in clean_alpm.keys()]
         avgs   = [clean_alpm[k]["avg_ms"] for k in clean_alpm.keys()]
         fig = go.Figure()
