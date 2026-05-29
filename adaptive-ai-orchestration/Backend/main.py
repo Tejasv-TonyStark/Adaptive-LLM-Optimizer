@@ -322,6 +322,8 @@ def chat(
         response        = response_text,
         strategy_used   = execution_strategy,
         model_used      = model_used,
+        selected_model  = model,
+        fallback_used   = fallback_used,
         complexity      = complexity,
         latency_ms      = latency_ms,
         quality_score   = 0.0,

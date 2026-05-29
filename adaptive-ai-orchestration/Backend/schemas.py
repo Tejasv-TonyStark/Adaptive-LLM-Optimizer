@@ -37,6 +37,8 @@ class ChatResponse(BaseModel):
     response:      str
     strategy_used: str
     model_used:    str
+    selected_model: Optional[str] = None
+    fallback_used:  bool = False
     complexity:    str
     latency_ms:    int
     quality_score: float

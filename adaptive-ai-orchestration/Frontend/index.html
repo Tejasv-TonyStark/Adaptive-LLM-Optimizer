@@ -587,11 +587,14 @@
   function addRoutingCard(qNum, query, data) {
     const side = document.getElementById("side-content");
 
-    const model   = data.model_used || "unknown";
-    const mInfo   = MODEL_DISPLAY[model] || { label: model, cls: "tag-default" };
-    const lat     = data.latency_ms || 0;
+    const model         = data.model_used || "unknown";
+    const selectedModel = data.selected_model || model;
+    const mInfo         = MODEL_DISPLAY[model] || { label: model, cls: "tag-default" };
+    const selectedInfo  = MODEL_DISPLAY[selectedModel] || { label: selectedModel, cls: "tag-default" };
+    const lat           = data.latency_ms || 0;
     const strat   = data.strategy_used || "—";
-    const quality = data.quality_score || 0;
+    const quality       = data.quality_score || 0;
+    const fallbackUsed  = Boolean(data.fallback_used) || selectedModel !== model;
     const qId     = data.query_id || "—";
 
     const complexity = data.complexity || "—";
@@ -606,9 +609,18 @@
       </div>
       <div class="routing-rows">
         <div class="routing-row">
-          <span class="routing-label">Model</span>
+          <span class="routing-label">${fallbackUsed ? "Used Model" : "Model"}</span>
           <span class="routing-value ${mInfo.cls}">${mInfo.label}</span>
         </div>
+        ${fallbackUsed ? `
+        <div class="routing-row">
+          <span class="routing-label">Selected</span>
+          <span class="routing-value ${selectedInfo.cls}">${selectedInfo.label}</span>
+        </div>
+        <div class="routing-row">
+          <span class="routing-label">Fallback</span>
+          <span class="routing-value tag-high">yes</span>
+        </div>` : ""}
         <div class="routing-row">
           <span class="routing-label">Complexity</span>
           <span class="routing-value ${compCls}">${complexity}</span>
