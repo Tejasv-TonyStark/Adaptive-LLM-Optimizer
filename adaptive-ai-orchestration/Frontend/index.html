@@ -113,6 +113,129 @@
 
   .btn-analysis svg { width: 13px; height: 13px; }
 
+  .btn-secondary {
+    font-family: var(--sans);
+    font-weight: 600;
+    font-size: 12px;
+    padding: 7px 14px;
+    border-radius: 6px;
+    border: 1px solid var(--border);
+    background: transparent;
+    color: var(--text);
+    cursor: pointer;
+  }
+
+  .btn-secondary:hover { border-color: var(--accent3); color: var(--accent3); }
+
+  .auth-screen {
+    position: fixed;
+    inset: 0;
+    z-index: 50;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    background: var(--bg);
+    padding: 24px;
+  }
+
+  .auth-panel {
+    width: min(420px, 100%);
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    padding: 26px;
+  }
+
+  .auth-title {
+    font-size: 22px;
+    font-weight: 800;
+    margin-bottom: 6px;
+  }
+
+  .auth-subtitle {
+    font-family: var(--mono);
+    font-size: 12px;
+    color: var(--muted);
+    margin-bottom: 22px;
+    line-height: 1.6;
+  }
+
+  .auth-tabs {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 8px;
+    margin-bottom: 18px;
+  }
+
+  .auth-tab {
+    height: 38px;
+    border-radius: 6px;
+    border: 1px solid var(--border);
+    background: var(--card);
+    color: var(--muted);
+    font-family: var(--sans);
+    font-weight: 700;
+    cursor: pointer;
+  }
+
+  .auth-tab.active {
+    border-color: var(--accent);
+    color: var(--accent);
+  }
+
+  .auth-form {
+    display: flex;
+    flex-direction: column;
+    gap: 12px;
+  }
+
+  .auth-form.hidden { display: none; }
+
+  .auth-input {
+    height: 44px;
+    border-radius: 6px;
+    border: 1px solid var(--border);
+    background: var(--card);
+    color: var(--text);
+    padding: 0 12px;
+    font-family: var(--sans);
+    font-size: 14px;
+    outline: none;
+  }
+
+  .auth-input:focus { border-color: var(--accent); }
+
+  .auth-submit {
+    height: 44px;
+    border-radius: 6px;
+    border: none;
+    background: var(--accent);
+    color: #000;
+    font-family: var(--sans);
+    font-weight: 800;
+    cursor: pointer;
+  }
+
+  .auth-submit:disabled { opacity: 0.6; cursor: wait; }
+
+  .auth-error {
+    min-height: 18px;
+    color: var(--accent3);
+    font-family: var(--mono);
+    font-size: 11px;
+    line-height: 1.5;
+  }
+
+  .auth-demo {
+    margin-top: 16px;
+    padding-top: 14px;
+    border-top: 1px solid var(--border);
+    color: var(--muted);
+    font-family: var(--mono);
+    font-size: 11px;
+    line-height: 1.7;
+  }
+
   /* ── MAIN LAYOUT ── */
   .main {
     display: flex;
@@ -376,6 +499,35 @@
 </head>
 <body>
 
+<!-- AUTH -->
+<div class="auth-screen" id="auth-screen">
+  <div class="auth-panel">
+    <div class="auth-title">AdaptiveAI Login</div>
+    <div class="auth-subtitle">Sign in to get a JWT token before using the protected chat API.</div>
+
+    <div class="auth-tabs">
+      <button class="auth-tab active" id="login-tab" onclick="showAuthForm('login')">Login</button>
+      <button class="auth-tab" id="register-tab" onclick="showAuthForm('register')">Register</button>
+    </div>
+
+    <form class="auth-form" id="login-form" onsubmit="loginUser(event)">
+      <input class="auth-input" id="login-username" placeholder="Username" value="tejasv" autocomplete="username"/>
+      <input class="auth-input" id="login-password" placeholder="Password" type="password" value="mypassword123" autocomplete="current-password"/>
+      <button class="auth-submit" id="login-submit" type="submit">Login</button>
+    </form>
+
+    <form class="auth-form hidden" id="register-form" onsubmit="registerUser(event)">
+      <input class="auth-input" id="register-username" placeholder="Username" autocomplete="username"/>
+      <input class="auth-input" id="register-email" placeholder="Email" type="email" autocomplete="email"/>
+      <input class="auth-input" id="register-password" placeholder="Password" type="password" autocomplete="new-password"/>
+      <button class="auth-submit" id="register-submit" type="submit">Create Account</button>
+    </form>
+
+    <div class="auth-error" id="auth-error"></div>
+    <div class="auth-demo">Demo account: tejasv / mypassword123</div>
+  </div>
+</div>
+
 <!-- TOPBAR -->
 <div class="topbar">
   <div class="topbar-left">
@@ -384,6 +536,7 @@
     <span class="badge">v2.0 · AWS Bedrock</span>
   </div>
   <div class="topbar-right">
+    <span class="badge" id="user-badge">Not logged in</span>
     <span class="badge" id="status-badge">● API Connected</span>
     <button class="btn-analysis" onclick="openDashboard()">
       <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
@@ -392,6 +545,7 @@
       </svg>
       View Analysis
     </button>
+    <button class="btn-secondary" id="logout-btn" onclick="logoutUser()" style="display:none">Logout</button>
   </div>
 </div>
 
@@ -445,9 +599,12 @@
   const API_BASE = "http://localhost:8000";
   const API_KEY  = "adaptive-ai-key-001";
   const SESSION  = "frontend-" + Math.random().toString(36).slice(2, 9);
+  const TOKEN_KEY = "adaptive_ai_jwt";
 
   let queryCount = 0;
   let isLoading  = false;
+  let authToken  = localStorage.getItem(TOKEN_KEY) || "";
+  let currentUser = null;
 
   const MODEL_DISPLAY = {
     "nova-micro": { label: "Nova Micro",    cls: "tag-nova"    },
@@ -474,10 +631,117 @@
     window.open("http://localhost:8501", "_blank");
   }
 
+  function showAuthForm(mode) {
+    document.getElementById("auth-error").textContent = "";
+    document.getElementById("login-form").classList.toggle("hidden", mode !== "login");
+    document.getElementById("register-form").classList.toggle("hidden", mode !== "register");
+    document.getElementById("login-tab").classList.toggle("active", mode === "login");
+    document.getElementById("register-tab").classList.toggle("active", mode === "register");
+  }
+
+  async function authRequest(path, payload) {
+    const res = await fetch(`${API_BASE}${path}`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(payload)
+    });
+    const data = await res.json().catch(() => ({}));
+    if (!res.ok) throw new Error(data.detail || `Request failed (${res.status})`);
+    return data;
+  }
+
+  async function loginUser(event) {
+    event.preventDefault();
+    const error = document.getElementById("auth-error");
+    const button = document.getElementById("login-submit");
+    error.textContent = "";
+    button.disabled = true;
+
+    try {
+      const data = await authRequest("/api/auth/login", {
+        username: document.getElementById("login-username").value.trim(),
+        password: document.getElementById("login-password").value
+      });
+      authToken = data.access_token;
+      localStorage.setItem(TOKEN_KEY, authToken);
+      await loadCurrentUser();
+    } catch (err) {
+      error.textContent = err.message;
+    } finally {
+      button.disabled = false;
+    }
+  }
+
+  async function registerUser(event) {
+    event.preventDefault();
+    const error = document.getElementById("auth-error");
+    const button = document.getElementById("register-submit");
+    error.textContent = "";
+    button.disabled = true;
+
+    const username = document.getElementById("register-username").value.trim();
+    const password = document.getElementById("register-password").value;
+
+    try {
+      await authRequest("/api/auth/register", {
+        username,
+        email: document.getElementById("register-email").value.trim(),
+        password
+      });
+      document.getElementById("login-username").value = username;
+      document.getElementById("login-password").value = password;
+      showAuthForm("login");
+      error.textContent = "Account created. Click Login to continue.";
+    } catch (err) {
+      error.textContent = err.message;
+    } finally {
+      button.disabled = false;
+    }
+  }
+
+  async function loadCurrentUser() {
+    if (!authToken) {
+      setLoggedOut();
+      return;
+    }
+
+    try {
+      const res = await fetch(`${API_BASE}/api/auth/me`, {
+        headers: { "Authorization": `Bearer ${authToken}` }
+      });
+      if (!res.ok) throw new Error("Session expired");
+      currentUser = await res.json();
+      document.getElementById("auth-screen").style.display = "none";
+      document.getElementById("user-badge").textContent = `Logged in: ${currentUser.username}`;
+      document.getElementById("logout-btn").style.display = "inline-flex";
+    } catch {
+      localStorage.removeItem(TOKEN_KEY);
+      authToken = "";
+      setLoggedOut();
+    }
+  }
+
+  function setLoggedOut() {
+    currentUser = null;
+    document.getElementById("auth-screen").style.display = "flex";
+    document.getElementById("user-badge").textContent = "Not logged in";
+    document.getElementById("logout-btn").style.display = "none";
+  }
+
+  function logoutUser() {
+    localStorage.removeItem(TOKEN_KEY);
+    authToken = "";
+    setLoggedOut();
+  }
+
   // ── SEND QUERY ──
   async function sendQuery() {
     const text = textarea.value.trim();
     if (!text || isLoading) return;
+    if (!authToken) {
+      setLoggedOut();
+      return;
+    }
 
     isLoading = true;
     queryCount++;
@@ -505,7 +769,8 @@
         method:  "POST",
         headers: {
           "Content-Type": "application/json",
-          "X-API-Key":    API_KEY
+          "X-API-Key":    API_KEY,
+          "Authorization": `Bearer ${authToken}`
         },
         body: JSON.stringify({
           query:      text,
@@ -691,6 +956,7 @@
   }
 
   checkStatus();
+  loadCurrentUser();
   setInterval(checkStatus, 30000);
 </script>
 </body>
