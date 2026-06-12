@@ -25,6 +25,12 @@ class Query(Base):
     fallback_used = Column(Boolean, default=False)
     created_at    = Column(DateTime(timezone=True), server_default=func.now())
 
+    # ── Token tracking (nullable — old rows will have NULL) ──
+    input_tokens   = Column(Integer,  nullable=True)
+    output_tokens  = Column(Integer,  nullable=True)
+    total_tokens   = Column(Integer,  nullable=True)
+    estimated_cost = Column(Float,    nullable=True)
+
     evaluation = relationship("Evaluation", back_populates="query",
                                uselist=False, cascade="all, delete-orphan")
     feedback   = relationship("Feedback",   back_populates="query",
@@ -90,10 +96,6 @@ class Feedback(Base):
     query = relationship("Query", back_populates="feedback")
 
 
-# ──────────────────────────────────────────
-# TABLE 6 — USERS
-# JWT authentication — passwords as bcrypt hashes
-# ──────────────────────────────────────────
 class User(Base):
     __tablename__ = "users"
 

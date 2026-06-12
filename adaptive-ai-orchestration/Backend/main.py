@@ -55,13 +55,61 @@ app.add_middleware(
 
 
 # ──────────────────────────────────────────
+# TOKEN COST CALCULATION
+# Real AWS Bedrock pricing per 1K tokens
+# ──────────────────────────────────────────
+
+MODEL_PRICING = {
+    "nova-micro": {"input": 0.000035,  "output": 0.000140},
+    "llama3-8b":  {"input": 0.000220,  "output": 0.000220},
+    "haiku":      {"input": 0.000720,  "output": 0.000720},
+}
+
+def estimate_tokens_from_text(text: str) -> int:
+    """Fallback: ~4 chars per token."""
+    return max(1, len(text) // 4)
+
+def calculate_cost(model: str, input_tokens: int, output_tokens: int) -> float:
+    """Calculate USD cost from token counts."""
+    pricing = MODEL_PRICING.get(model, MODEL_PRICING["llama3-8b"])
+    cost = (input_tokens  / 1000 * pricing["input"] +
+            output_tokens / 1000 * pricing["output"])
+    return round(cost, 8)
+
+def resolve_token_usage(result: dict, query_text: str, model: str) -> dict:
+    """
+    Priority:
+    1. Use Bedrock metadata if present (exact)
+    2. Estimate from text length (fallback)
+    """
+    input_tokens  = result.get("input_tokens")
+    output_tokens = result.get("output_tokens")
+
+    # Fallback estimation if Bedrock didn't return counts
+    if input_tokens is None:
+        input_tokens = estimate_tokens_from_text(query_text)
+    if output_tokens is None:
+        output_tokens = estimate_tokens_from_text(result.get("response", ""))
+
+    total_tokens   = input_tokens + output_tokens
+    estimated_cost = calculate_cost(model, input_tokens, output_tokens)
+
+    return {
+        "input_tokens":   input_tokens,
+        "output_tokens":  output_tokens,
+        "total_tokens":   total_tokens,
+        "estimated_cost": estimated_cost,
+    }
+
+
+# ──────────────────────────────────────────
 # BACKGROUND EVALUATION + LEARNING
 # ──────────────────────────────────────────
 
 def run_evaluation(query_id, query, response, context,
                    model_used, complexity, latency_ms):
     from Evaluation.Evaluator import evaluate_response
-    from Learning.learning_engine import update_model_probabilities
+    from Learning.learning import update_model_probabilities
     from database.connection import SessionLocal
 
     db = SessionLocal()
@@ -200,8 +248,8 @@ def chat(
     # ── Step 3: RAG ──
     context = None
     if retrieval_needed:
-        result  = retrieve(clean_query)
-        context = result["context"] if result["found"] else None
+        rag_result = retrieve(clean_query)
+        context    = rag_result["context"] if rag_result["found"] else None
 
     # ── Step 4: Execute ──
     result        = execute_query(query=clean_query, model=model,
@@ -211,24 +259,49 @@ def chat(
     fallback_used = result["fallback_used"]
     latency_ms    = int((time.time() - start_time) * 1000)
 
-    # ── Step 5: Save ──
+    # ── Step 4b: Resolve token usage + cost ──
+    tokens = resolve_token_usage(result, clean_query, model_used)
+    print(f"📊 Tokens — input: {tokens['input_tokens']}  "
+          f"output: {tokens['output_tokens']}  "
+          f"total: {tokens['total_tokens']}  "
+          f"cost: ${tokens['estimated_cost']}")
+
+    # ── Step 5: Save (with tokens) ──
     saved_query = crud.save_query(
-        db=db, session_id=body.session_id, query_text=clean_query,
-        intent=intent, complexity=complexity, strategy=execution_strategy,
-        model_used=model_used, response=response_text,
-        latency_ms=latency_ms, fallback_used=fallback_used
+        db            = db,
+        session_id    = body.session_id,
+        query_text    = clean_query,
+        intent        = intent,
+        complexity    = complexity,
+        strategy      = execution_strategy,
+        model_used    = model_used,
+        response      = response_text,
+        latency_ms    = latency_ms,
+        fallback_used = fallback_used,
+        # ── token fields ──
+        input_tokens   = tokens["input_tokens"],
+        output_tokens  = tokens["output_tokens"],
+        total_tokens   = tokens["total_tokens"],
+        estimated_cost = tokens["estimated_cost"],
     )
 
     # ── Step 6: Audit ──
     crud.save_audit_log(
         db=db, event_type="request",
         detail={
-            "query_id": saved_query.id, "user": token_data.get("username"),
-            "session_id": body.session_id, "intent": intent,
-            "complexity": complexity, "model": model_used,
-            "strategy": execution_strategy, "retrieval_needed": retrieval_needed,
+            "query_id":          saved_query.id,
+            "user":              token_data.get("username"),
+            "session_id":        body.session_id,
+            "intent":            intent,
+            "complexity":        complexity,
+            "model":             model_used,
+            "strategy":          execution_strategy,
+            "retrieval_needed":  retrieval_needed,
             "rag_context_found": context is not None,
-            "latency_ms": latency_ms, "fallback": fallback_used
+            "latency_ms":        latency_ms,
+            "fallback":          fallback_used,
+            "total_tokens":      tokens["total_tokens"],
+            "estimated_cost":    tokens["estimated_cost"],
         },
         api_key=token_data.get("sub", "")
     )

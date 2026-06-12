@@ -1,6 +1,5 @@
 # Execution/Bedrock_client.py
 
-import boto3
 import json
 import os
 from dotenv import load_dotenv
@@ -34,6 +33,13 @@ def normalize_max_output_tokens(max_output_tokens: int | None) -> int:
 
 def get_bedrock_client():
     """Returns a Bedrock runtime client using credentials from .env"""
+    try:
+        import boto3
+    except ImportError as error:
+        raise RuntimeError(
+            "boto3 is required for AWS Bedrock calls. Install it with: pip install boto3"
+        ) from error
+
     return boto3.client(
         "bedrock-runtime",
         region_name          = REGION,

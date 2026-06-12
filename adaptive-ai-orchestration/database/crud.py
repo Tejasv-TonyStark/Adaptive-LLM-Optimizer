@@ -11,17 +11,37 @@ from datetime import datetime
 
 def save_query(db: Session, session_id: str, query_text: str, intent: str,
                complexity: str, strategy: str, model_used: str,
-               response: str, latency_ms: int, fallback_used: bool = False) -> Query:
+               response: str, latency_ms: int, fallback_used: bool = False,
+               input_tokens: int = None, output_tokens: int = None,
+               total_tokens: int = None, estimated_cost: float = None) -> Query:
     query = Query(
-        session_id=session_id, query_text=query_text, intent=intent,
-        complexity=complexity, strategy=strategy, model_used=model_used,
-        response=response, latency_ms=latency_ms, fallback_used=fallback_used
+        session_id     = session_id,
+        query_text     = query_text,
+        intent         = intent,
+        complexity     = complexity,
+        strategy       = strategy,
+        model_used     = model_used,
+        response       = response,
+        latency_ms     = latency_ms,
+        fallback_used  = fallback_used,
+        input_tokens   = input_tokens,
+        output_tokens  = output_tokens,
+        total_tokens   = total_tokens,
+        estimated_cost = estimated_cost,
     )
     db.add(query); db.commit(); db.refresh(query)
     return query
 
 def get_query_by_id(db: Session, query_id: int) -> Query:
     return db.query(Query).filter(Query.id == query_id).first()
+
+def get_recent_queries(db: Session, limit: int = 20) -> list:
+    return (
+        db.query(Query)
+        .order_by(Query.created_at.desc())
+        .limit(limit)
+        .all()
+    )
 
 
 # ──────────────────────────────────────────
@@ -45,7 +65,8 @@ def save_evaluation(db: Session, query_id: int, relevance: float,
 
 def get_probability(db: Session, model: str, complexity: str) -> Probability:
     return db.query(Probability).filter(
-        Probability.model == model, Probability.complexity == complexity
+        Probability.model == model,
+        Probability.complexity == complexity
     ).first()
 
 def get_all_probabilities(db: Session) -> list[Probability]:
@@ -61,6 +82,46 @@ def update_probability(db: Session, model: str, complexity: str,
         row.last_updated = datetime.utcnow()
         db.commit(); db.refresh(row)
     return row
+
+
+# ──────────────────────────────────────────
+# TOKEN STATS
+# ──────────────────────────────────────────
+
+def get_token_stats(db: Session) -> dict:
+    """Global token + cost aggregates."""
+    from sqlalchemy import func
+    result = db.query(
+        func.sum(Query.total_tokens).label("total"),
+        func.avg(Query.total_tokens).label("avg"),
+        func.sum(Query.estimated_cost).label("cost"),
+    ).one()
+    return {
+        "total_tokens":          int(result.total or 0),
+        "avg_tokens_per_query":  round(float(result.avg or 0), 1),
+        "total_estimated_cost":  round(float(result.cost or 0), 6),
+    }
+
+def get_token_stats_by_model(db: Session) -> list:
+    """Per-model token + cost breakdown."""
+    from sqlalchemy import func
+    rows = db.query(
+        Query.model_used,
+        func.sum(Query.input_tokens).label("input"),
+        func.sum(Query.output_tokens).label("output"),
+        func.sum(Query.total_tokens).label("total"),
+        func.sum(Query.estimated_cost).label("cost"),
+    ).group_by(Query.model_used).all()
+    return [
+        {
+            "model":         row.model_used,
+            "input_tokens":  int(row.input  or 0),
+            "output_tokens": int(row.output or 0),
+            "total_tokens":  int(row.total  or 0),
+            "total_cost":    round(float(row.cost or 0), 6),
+        }
+        for row in rows
+    ]
 
 
 # ──────────────────────────────────────────

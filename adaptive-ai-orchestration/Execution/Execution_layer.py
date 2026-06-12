@@ -47,6 +47,7 @@ def execute_query(query: str, model: str, strategy: str,
     prompt            = build_prompt(query, prompt_strategy, context)
     max_output_tokens = get_output_token_budget(prompt_strategy)
     start_time        = time.time()
+    primary_error     = None
 
     # ── Primary attempt ────────────────────
     try:
@@ -67,7 +68,8 @@ def execute_query(query: str, model: str, strategy: str,
             "error":         None,
         }
 
-    except Exception as primary_error:
+    except Exception as error:
+        primary_error = error
         print(f"⚠️  Primary model {model} failed: {primary_error}")
 
     # ── Fallback chain ─────────────────────

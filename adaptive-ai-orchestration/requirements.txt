@@ -1,0 +1,17 @@
+fastapi
+uvicorn
+slowapi
+sqlalchemy
+psycopg2-binary
+python-dotenv
+boto3
+numpy
+faiss-cpu
+sentence-transformers
+pypdf
+langchain-text-splitters
+bcrypt
+python-jose
+streamlit
+pandas
+plotly
