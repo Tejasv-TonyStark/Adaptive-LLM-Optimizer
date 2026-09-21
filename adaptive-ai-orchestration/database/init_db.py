@@ -1,9 +1,5 @@
-# database/init_db.py
-
-from database.connection import engine, Base
-from database import models  # imports all table classes including User
-
-Base.metadata.create_all(bind=engine)
-
-print("✅ All tables created successfully in PostgreSQL!")
-print("   Tables: queries, evaluations, probabilities, audit_logs, feedback, users")
+"""Create or upgrade tables explicitly; importing this module never mutates a DB."""
+from database.migrate_v3 import migrate
+if __name__ == "__main__":
+    migrate()
+    print("Schema ready. Run python -m database.seed next.")

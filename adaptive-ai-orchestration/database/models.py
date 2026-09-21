@@ -14,6 +14,16 @@ class Query(Base):
     __tablename__ = "queries"
 
     id            = Column(Integer, primary_key=True, autoincrement=True)
+    user_id       = Column(Integer, ForeignKey("users.id"), nullable=True, index=True)
+    selected_model = Column(String(50))
+    model_latency_ms = Column(Integer)
+    status        = Column(String(20), default="completed")
+    evaluation_status = Column(String(20), default="skipped", index=True)
+    evaluation_attempts = Column(Integer, default=0)
+    evaluation_retry_at = Column(DateTime(timezone=True))
+    context       = Column(Text)
+    sources       = Column(JSON, default=list)
+    routing_details = Column(JSON, default=dict)
     session_id    = Column(String(100), nullable=False)
     query_text    = Column(Text, nullable=False)
     intent        = Column(String(20))
@@ -47,6 +57,9 @@ class Evaluation(Base):
     completeness  = Column(Float)
     quality_score = Column(Float)
     reasoning     = Column(Text)
+    hallucination_flags = Column(JSON, default=list)
+    retrieval_score = Column(Float)
+    retrieval_warning = Column(Boolean)
     created_at    = Column(DateTime(timezone=True), server_default=func.now())
 
     query = relationship("Query", back_populates="evaluation")
@@ -105,3 +118,20 @@ class User(Base):
     hashed_password = Column(String(255), nullable=False)
     is_active       = Column(Boolean, default=True)
     created_at      = Column(DateTime(timezone=True), server_default=func.now())
+
+
+class Usage(Base):
+    """Every provider attempt, including failures with unknown billing."""
+    __tablename__ = "usage"
+    id = Column(Integer, primary_key=True)
+    query_id = Column(Integer, ForeignKey("queries.id"), nullable=False, index=True)
+    model = Column(String(50), nullable=False)
+    stage = Column(String(20), nullable=False)
+    status = Column(String(20), nullable=False)
+    input_tokens = Column(Integer)
+    output_tokens = Column(Integer)
+    estimated_cost = Column(Float)
+    estimated = Column(Boolean, default=True)
+    latency_ms = Column(Integer)
+    error = Column(String(100))
+    created_at = Column(DateTime(timezone=True), server_default=func.now())

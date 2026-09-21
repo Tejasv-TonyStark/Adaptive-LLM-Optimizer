@@ -1,138 +1,69 @@
-# Execution/Execution_layer.py
-
 import time
 from Execution.Bedrock_client import invoke_model
 from Execution.prompt_builder import build_prompt
-
-
-# ──────────────────────────────────────────
-# FALLBACK CHAIN
-# Primary fails → try these in order
-# ──────────────────────────────────────────
-
+from tracking.usage import usage_record
+from RAG.evidence import render_evidence, ABSTENTION
 FALLBACK_CHAIN = {
-    "haiku":      ["llama3-8b", "nova-micro"],
-    "llama3-8b":  ["nova-micro", "haiku"],
-    "nova-micro": ["llama3-8b",  "haiku"],
+    "llama3-70b": ["llama3-8b", "nova-micro"],
+    "llama3-8b": ["nova-micro", "llama3-70b"],
+    "nova-micro": ["llama3-8b", "llama3-70b"],
 }
-
-OUTPUT_TOKEN_BUDGETS = {
-    "fast":      160,
-    "reasoning": 384,
-    "rag":       320,
-    "default":   256,
-}
-
-
-def get_output_token_budget(strategy: str) -> int:
-    """Returns a practical output cap for each response strategy."""
+OUTPUT_TOKEN_BUDGETS = {"fast": 160, "reasoning": 512, "rag": 512, "default": 256}
+class ExecutionError(RuntimeError):
+    def __init__(self, attempts):
+        super().__init__("All configured models failed.")
+        self.attempts = attempts
+def get_output_token_budget(strategy):
     return OUTPUT_TOKEN_BUDGETS.get(strategy, OUTPUT_TOKEN_BUDGETS["default"])
-
-
-def execute_query(query: str, model: str, strategy: str,
-                  context: str = None) -> dict:
-    """
-    Executes query against selected model with fallback chain.
-
-    Returns dict:
-        response       — model's answer text
-        model_used     — which model actually answered
-        latency_ms     — wall-clock ms for the call
-        fallback_used  — True if primary model failed
-        input_tokens   — prompt token count (from Bedrock metadata, or None)
-        output_tokens  — response token count (from Bedrock metadata, or None)
-        error          — error message if all models failed, else None
-    """
-    prompt_strategy   = "rag" if context else strategy
-    prompt            = build_prompt(query, prompt_strategy, context)
-    max_output_tokens = get_output_token_budget(prompt_strategy)
-    start_time        = time.time()
-    primary_error     = None
-
-    # ── Primary attempt ────────────────────
-    try:
-        result     = invoke_model(
-            model,
-            prompt,
-            max_output_tokens=max_output_tokens
-        )   # returns {text, input_tokens, output_tokens}
-        latency_ms = int((time.time() - start_time) * 1000)
-
-        return {
-            "response":      result["text"],
-            "model_used":    model,
-            "latency_ms":    latency_ms,
-            "fallback_used": False,
-            "input_tokens":  result.get("input_tokens"),
-            "output_tokens": result.get("output_tokens"),
-            "error":         None,
-        }
-
-    except Exception as error:
-        primary_error = error
-        print(f"⚠️  Primary model {model} failed: {primary_error}")
-
-    # ── Fallback chain ─────────────────────
-    for fallback_model in FALLBACK_CHAIN.get(model, []):
+def execute_query(query, model, strategy, context=None, retrieval_required=False, allow_fallback=True,
+                  eligible_models=None, history=None):
+    if model not in FALLBACK_CHAIN:
+        raise ValueError("Unknown model")
+    required = retrieval_required or strategy == "rag"
+    if required and not context:
+        return dict(response=ABSTENTION, model_used="none", selected_model=model,
+                    latency_ms=0, fallback_used=False, input_tokens=0, output_tokens=0,
+                    error=None, attempts=[], abstained=True)
+    prompt_strategy = "rag" if required or context else strategy
+    prompt = build_prompt(query, prompt_strategy, context, history=history)
+    attempts = []
+    models = [model, *(FALLBACK_CHAIN[model] if allow_fallback else [])]
+    if eligible_models is not None:
+        models = [m for m in models if m in eligible_models]
+    invalid_evidence = False
+    for candidate in models:
+        started = time.perf_counter()
         try:
-            print(f"Trying fallback → {fallback_model}")
-
-            start_time = time.time()
-            result     = invoke_model(
-                fallback_model,
-                prompt,
-                max_output_tokens=max_output_tokens
-            )
-            latency_ms = int((time.time() - start_time) * 1000)
-
-            return {
-                "response":      result["text"],
-                "model_used":    fallback_model,
-                "latency_ms":    latency_ms,
-                "fallback_used": True,
-                "input_tokens":  result.get("input_tokens"),
-                "output_tokens": result.get("output_tokens"),
-                "error":         None,
-            }
-
-        except Exception as fallback_error:
-            print(f"Fallback {fallback_model} failed: {fallback_error}")
-
-    # ── All models failed ──────────────────
-    return {
-        "response":      "All models failed. Please try again later.",
-        "model_used":    model,
-        "latency_ms":    int((time.time() - start_time) * 1000),
-        "fallback_used": True,
-        "input_tokens":  None,
-        "output_tokens": None,
-        "error":         str(primary_error),
-    }
-
-
-# ──────────────────────────────────────────
-# TEST
-# ──────────────────────────────────────────
-
-if __name__ == "__main__":
-    print("\n── Execution Layer Test ──\n")
-
-    test_cases = [
-        {"query": "What is Python?",                            "model": "nova-micro", "strategy": "fast",      "context": None},
-        {"query": "Compare transformers vs RNN architectures",  "model": "llama3-8b",  "strategy": "reasoning", "context": None},
-        {"query": "What is our leave policy?",                  "model": "nova-micro", "strategy": "rag",
-         "context": "Employees are entitled to 18 days of annual leave per year."},
-    ]
-
-    for test in test_cases:
-        print(f"Query:    {test['query']}")
-        print(f"Model:    {test['model']}  |  Strategy: {test['strategy']}")
-
-        result = execute_query(**test)
-
-        print(f"Response: {result['response'][:150]}...")
-        print(f"Tokens:   input={result['input_tokens']}  output={result['output_tokens']}")
-        print(f"Latency:  {result['latency_ms']} ms  |  Fallback: {result['fallback_used']}")
-        print("-" * 50)
-
-    print("✅ Execution layer working correctly!")
+            result = invoke_model(candidate, prompt,
+                                  max_output_tokens=get_output_token_budget(prompt_strategy))
+            elapsed = round((time.perf_counter()-started)*1000)
+            record = usage_record(candidate, "generation", prompt, result, elapsed)
+            attempts.append(record)
+            if not result["text"].strip():
+                record["status"] = "failed"
+                record["error"] = "EmptyResponse"
+                continue
+            if result.get("stop_reason") in {"length", "max_tokens", "max_token", "maxTokens"}:
+                record.update(status="failed", error="TruncatedResponse")
+                continue
+            response, abstained = result["text"], False
+            if required:
+                try:
+                    response, abstained = render_evidence(response, context)
+                except (ValueError, TypeError):
+                    record.update(status="failed", error="InvalidEvidence")
+                    invalid_evidence = True
+                    continue
+            return dict(response=response, model_used=candidate, selected_model=model,
+                        latency_ms=elapsed, fallback_used=candidate != model,
+                        input_tokens=record["input_tokens"], output_tokens=record["output_tokens"],
+                        attempts=attempts, abstained=abstained, error=None)
+        except Exception as exc:
+            attempts.append(usage_record(candidate, "generation", prompt, {},
+                round((time.perf_counter()-started)*1000), error=exc))
+    if invalid_evidence:
+        return dict(response="I could not verify supporting passages in the available documents.",
+                    model_used="none", selected_model=model, latency_ms=0,
+                    fallback_used=len(attempts)>1, input_tokens=0, output_tokens=0,
+                    error="InvalidEvidence", attempts=attempts, abstained=True)
+    raise ExecutionError(attempts)

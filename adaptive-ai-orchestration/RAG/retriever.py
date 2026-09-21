@@ -1,72 +1,36 @@
-# rag/retriever.py
-
-from RAG.embedder import embed_query
+import os
+import time
+from Execution.Bedrock_client import get_embedding_result
 from RAG.vector_store import search_index
-
-# ──────────────────────────────────────────
-# SETTINGS
-# ──────────────────────────────────────────
-
-SIMILARITY_THRESHOLD = 0.75  # raised from 0.70
+from tracking.usage import usage_record
+from Execution.prompt_builder import MAX_RAG_CONTEXT_CHARS
+from RAG.access import allowed_sources
+SIMILARITY_THRESHOLD = float(os.getenv("RAG_SIMILARITY_THRESHOLD", "0.75"))
 MAX_CONTEXT_CHUNKS = 5
-
-def retrieve(query: str, top_k: int = 5) -> dict:
-    query_embedding = embed_query(query)
-    results = search_index(query_embedding, top_k=top_k)
-
-    filtered = [
-        r for r in results
-        if r["score"] >= SIMILARITY_THRESHOLD
-    ]
-
-    # ← REMOVE the fallback that forces results[:2]
-    # If nothing passes threshold, return nothing
-    if not filtered:
-        return {
-            "context": "",
-            "chunks":  [],
-            "found":   False
-        }
-
-    filtered = filtered[:MAX_CONTEXT_CHUNKS]
-
-    context_parts = []
-    for chunk in filtered:
-        context_parts.append(
-            f"[Source: {chunk['source']} | Score: {chunk['score']}]\n"
-            f"{chunk['text']}"
-        )
-
-    context = "\n\n---\n\n".join(context_parts)
-
-    return {
-        "context": context,
-        "chunks":  filtered,
-        "found":   True
-    }
-# ──────────────────────────────────────────
-# TEST
-# ──────────────────────────────────────────
-
-if __name__ == "__main__":
-    print("\n── Retriever Test ──\n")
-
-    test_queries = [
-        "What is the leave policy?",
-        "What is the notice period for resignation?",
-        "What are the salary benefits?",
-        "What is Python?"  # general query — should return low scores
-    ]
-
-    for query in test_queries:
-        print(f"Query:   {query}")
-        result = retrieve(query)
-        print(f"Found:   {result['found']}")
-        print(f"Chunks:  {len(result['chunks'])}")
-        if result["chunks"]:
-            print(f"Top score: {result['chunks'][0]['score']}")
-            print(f"Source:    {result['chunks'][0]['source']}")
-            print(f"Text:      {result['chunks'][0]['text'][:100]}...")
-        print()
-
-    print("✅ Retriever working correctly!")
+if not -1 <= SIMILARITY_THRESHOLD <= 1:
+    raise ValueError("RAG_SIMILARITY_THRESHOLD must be in [-1, 1]")
+def retrieve(query, top_k=5, usage=None, user_id=None):
+    permissions = allowed_sources(user_id)
+    if permissions == set():
+        return dict(context="", chunks=[], found=False)
+    records = usage if usage is not None else []
+    started = time.perf_counter()
+    try:
+        embedding = get_embedding_result(query)
+        records.append(usage_record("titan-embed-v2", "embedding", query, embedding,
+                                    round((time.perf_counter()-started)*1000)))
+    except Exception as exc:
+        records.append(usage_record("titan-embed-v2", "embedding", query, {},
+                                    round((time.perf_counter()-started)*1000), error=exc))
+        raise
+    results = search_index(embedding["embedding"], top_k, allowed_sources=permissions)
+    chunks, parts = [], []
+    for chunk in results:
+        if chunk["score"] < SIMILARITY_THRESHOLD or len(chunks) >= MAX_CONTEXT_CHUNKS:
+            continue
+        part = f"[{len(chunks)+1}] {chunk['source']}, page {chunk['page']}\n{chunk['text']}"
+        if len("\n\n---\n\n".join([*parts, part])) > MAX_RAG_CONTEXT_CHARS:
+            break
+        chunks.append(chunk)
+        parts.append(part)
+    return dict(context="\n\n---\n\n".join(parts), chunks=chunks, found=bool(chunks))

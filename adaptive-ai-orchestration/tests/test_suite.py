@@ -2,6 +2,8 @@
 # Unit tests for all modules — run with: python -m tests.test_suite
 
 import sys
+import os
+os.environ["JWT_SECRET_KEY"] = "offline-test-secret-that-is-at-least-32-bytes"
 import json
 
 if hasattr(sys.stdout, "reconfigure"):
@@ -62,7 +64,7 @@ def test_security_guard():
 
     # RAG guardrails
     r = inspect_query("What is our policy on bomb making?", True)
-    check("Harmful RAG query blocked", not r["safe"])
+    check("Topic words alone are not an authorization policy", r["safe"])
 
     r = inspect_query("What is my API key?", True)
     check("Credential fishing blocked", not r["safe"])

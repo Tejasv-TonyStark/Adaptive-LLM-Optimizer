@@ -1,195 +1,58 @@
-# core/decision_engine.py
-
-from sqlalchemy.orm import Session
+"""Static baseline and opt-in greedy online-mean router. No Bayesian claims."""
 from database.crud import get_probability
-import math
-
-# ──────────────────────────────────────────
-# MODELS IN ROUTING POOL
-# ──────────────────────────────────────────
-
-MODELS = ["nova-micro", "llama3-8b", "haiku"]
-
-# ──────────────────────────────────────────
-# COMPLEXITY-AWARE DYNAMIC WEIGHTS
-# ──────────────────────────────────────────
-
+from tracking.usage import calculate_cost
+import random
+from core.config import ROUTING_POLICY, EXPLORATION_RATE, MAX_EXPLORATION_COST_USD
+from core.model_health import model_health
+MODELS = ["nova-micro", "llama3-8b", "llama3-70b"]
+STATIC_MODELS = dict(low=MODELS[0], medium=MODELS[1], high=MODELS[2])
+SUITABLE_MODELS = dict(low=MODELS, medium=MODELS[1:], high=MODELS[2:])
 COMPLEXITY_WEIGHTS = {
-    "low": {
-        "quality": 0.2,
-        "latency": 0.4,
-        "cost":    0.4,
-    },
-    "medium": {
-        "quality": 0.5,
-        "latency": 0.3,
-        "cost":    0.2,
-    },
-    "high": {
-        "quality": 0.8,
-        "latency": 0.15,
-        "cost":    0.05,
-    }
+    "low": dict(quality=0.2, latency=0.4, cost=0.4),
+    "medium": dict(quality=0.5, latency=0.3, cost=0.2),
+    "high": dict(quality=0.8, latency=0.15, cost=0.05),
 }
-
-CONFIDENCE_FLOOR   = 0.3
-CONFIDENCE_CEILING = 1.0
-CONFIDENCE_SCALE   = 50
-
-
-def compute_confidence(sample_count: int) -> float:
-    """
-    Returns confidence multiplier based on sample count.
-    Uses logarithmic scaling.
-
-    At sample_count=0  → confidence = 0.30
-    At sample_count=10 → confidence ≈ 0.65
-    At sample_count=50 → confidence ≈ 1.00
-    """
-    if sample_count <= 0:
-        return CONFIDENCE_FLOOR
-
-    confidence = CONFIDENCE_FLOOR + (CONFIDENCE_CEILING - CONFIDENCE_FLOOR) * \
-                 math.log(1 + sample_count) / math.log(1 + CONFIDENCE_SCALE)
-
-    return min(confidence, CONFIDENCE_CEILING)
-
-
-def score_model(p_quality: float, p_latency: float, p_cost: float,
-                complexity: str, sample_count: int) -> float:
-    """
-    Calculates routing score using complexity-aware weights
-    and confidence scaling.
-
-    Higher score = better choice for this complexity level.
-    """
-    weights = COMPLEXITY_WEIGHTS[complexity]
-
-    raw_score = (weights["quality"] * p_quality) \
-              - (weights["latency"] * p_latency) \
-              - (weights["cost"]    * p_cost)
-
-    confidence  = compute_confidence(sample_count)
-    final_score = confidence * raw_score
-
-    return round(final_score, 4)
-
-
-def select_best_model(db: Session, complexity: str) -> dict:
-    """
-    Reads probability table and selects best model
-    using complexity-aware dynamic scoring.
-
-    Args:
-        db:         database session
-        complexity: low / medium / high
-
-    Returns:
-        dict with selected model, scores, all candidates
-    """
+def score_model(p_quality, p_latency, p_cost, complexity, sample_count=0):
+    w = COMPLEXITY_WEIGHTS[complexity]
+    return round(w["quality"]*p_quality - w["latency"]*p_latency - w["cost"]*p_cost, 6)
+def select_best_model(db, complexity, input_tokens=256, output_tokens=256, policy=None,
+                      exploration_rate=None, rng=None):
+    policy = policy or ROUTING_POLICY
+    if complexity not in STATIC_MODELS or policy not in {"static", "adaptive"}:
+        raise ValueError("Unknown complexity or routing policy")
+    costs = {m: calculate_cost(m, input_tokens, output_tokens) for m in MODELS}
+    health = {m: model_health(db, m) for m in MODELS}
+    eligible = [m for m in SUITABLE_MODELS[complexity] if not health[m]["circuit_open"]]
+    if not eligible:
+        raise RuntimeError("No suitable healthy model available")
     candidates = []
-
     for model in MODELS:
-        prob = get_probability(db, model, complexity)
-
-        if not prob:
-            print(f"⚠️  No probability row for {model} + {complexity}")
-            continue
-
-        routing_score = score_model(
-            p_quality    = prob.p_quality,
-            p_latency    = prob.p_latency,
-            p_cost       = prob.p_cost,
-            complexity   = complexity,
-            sample_count = prob.sample_count
-        )
-
-        confidence = compute_confidence(prob.sample_count)
-
-        candidates.append({
-            "model":         model,
-            "p_quality":     prob.p_quality,
-            "p_latency":     prob.p_latency,
-            "p_cost":        prob.p_cost,
-            "routing_score": routing_score,
-            "confidence":    round(confidence, 2),
-            "sample_count":  prob.sample_count
-        })
-
-    if not candidates:
-        return {
-            "selected_model": "haiku",
-            "routing_score":  0.0,
-            "candidates":     [],
-            "fallback":       True,
-            "reason":         "no probability data found"
-        }
-
-    # Sort by score — tiebreaker: prefer cheaper model
-    candidates.sort(
-        key=lambda x: (
-            round(x["routing_score"], 3),
-            -x["p_cost"]
-        ),
-        reverse=True
-    )
-
-    winner = candidates[0]
-
-    return {
-        "selected_model": winner["model"],
-        "routing_score":  winner["routing_score"],
-        "confidence":     winner["confidence"],
-        "candidates":     candidates,
-        "fallback":       False,
-        "reason":         f"complexity={complexity} "
-                          f"weights={COMPLEXITY_WEIGHTS[complexity]}"
-    }
-
-
-# ──────────────────────────────────────────
-# TEST
-# ──────────────────────────────────────────
-
-if __name__ == "__main__":
-    from database.connection import SessionLocal
-
-    db = SessionLocal()
-
-    print("\n── Decision Engine Results ──\n")
-
-    expected_winners = {
-        "low":    "nova-micro",
-        "medium": "llama3-8b",
-        "high":   "haiku"
-    }
-
-    all_passed = True
-
-    for complexity in ["low", "medium", "high"]:
-        result   = select_best_model(db, complexity)
-        expected = expected_winners[complexity]
-        passed   = result["selected_model"] == expected
-        status   = "✅" if passed else "❌"
-
-        if not passed:
-            all_passed = False
-
-        print(f"{status} Complexity: {complexity}")
-        print(f"   Expected: {expected}")
-        print(f"   Winner:   {result['selected_model']} "
-              f"(score={result['routing_score']})")
-        print(f"   Weights:  {COMPLEXITY_WEIGHTS[complexity]}")
-        print(f"   All candidates:")
-        for c in result["candidates"]:
-            marker = " ← winner" if c["model"] == result["selected_model"] else ""
-            print(f"      {c['model']:12} score={c['routing_score']:7} "
-                  f"confidence={c['confidence']}{marker}")
-        print()
-
-    db.close()
-
-    if all_passed:
-        print("✅ Decision engine working correctly!")
-    else:
-        print("❌ Some routing decisions need adjustment")
+        row = get_probability(db, model, complexity)
+        if row:
+            normalized_cost = costs[model] / max(max(costs.values()), 1e-12)
+            candidates.append(dict(model=model, expected_cost=costs[model],
+                sample_count=row.sample_count, eligible=model in eligible, health=health[model],
+                routing_score=score_model(row.p_quality, row.p_latency, normalized_cost, complexity)
+                    - 0.5 * health[model]["failure_rate"]))
+    candidates.sort(key=lambda x: (-x["routing_score"], x["expected_cost"], x["model"]))
+    complete = len(candidates) == len(MODELS)
+    ranked = [c for c in candidates if c["eligible"]]
+    baseline = STATIC_MODELS[complexity]
+    winner = ranked[0]["model"] if policy == "adaptive" and complete else (
+        baseline if baseline in eligible else eligible[0])
+    explored = False
+    rate = EXPLORATION_RATE if exploration_rate is None else exploration_rate
+    if not 0 <= rate <= 1:
+        raise ValueError("exploration_rate must be in [0, 1]")
+    rng = rng or random.SystemRandom()
+    alternatives = [c for c in ranked if c["model"] != winner and c["expected_cost"] <= MAX_EXPLORATION_COST_USD]
+    if policy == "adaptive" and complete and alternatives and rng.random() < rate:
+        # Prefer the least observed eligible alternative; randomize ties.
+        count = min(c["sample_count"] for c in alternatives)
+        winner = rng.choice([c["model"] for c in alternatives if c["sample_count"] == count])
+        explored = True
+    return dict(selected_model=winner, candidates=candidates, policy=policy,
+                exploration=explored, eligible_models=eligible,
+                fallback=policy == "adaptive" and not complete,
+                reason="bounded exploration" if explored else (
+                    "health-adjusted weighted utility" if policy == "adaptive" and complete else "complexity baseline with health checks"))

@@ -1,379 +1,138 @@
-# Backend/main.py
-
-from fastapi import FastAPI, Depends, Request, BackgroundTasks, HTTPException
+from contextlib import asynccontextmanager
+import os
+from fastapi import FastAPI, Depends, Request, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.staticfiles import StaticFiles
+from pathlib import Path
 from slowapi.errors import RateLimitExceeded
 from slowapi import _rate_limit_exceeded_handler
-from sqlalchemy.orm import Session
 from sqlalchemy import func, text
-
+from sqlalchemy.exc import IntegrityError
+from sqlalchemy.orm import Session
 from Backend.schemas import (
-    ChatRequest, ChatResponse,
-    FeedbackRequest, FeedbackResponse,
-    HealthResponse, MetricsResponse, ProbabilityResponse,
-    RegisterRequest, LoginRequest, TokenResponse, UserResponse
-)
-from Backend.dependencies import verify_api_key, limiter
+    ChatRequest, ChatResponse, FeedbackRequest, FeedbackResponse, HealthResponse,
+    MetricsResponse, ProbabilityResponse, RegisterRequest, LoginRequest,
+    TokenResponse, UserResponse, EvaluationResponse)
+from Backend.dependencies import limiter, current_user, admin_user
 from database.connection import get_db
-from database.models import Query, Evaluation
-from database import crud
-from core.orchestrator import orchestrate
-from core.decision_engine import select_best_model
-from Execution.Execution_layer import execute_query
-from RAG.retriever import retrieve
-from Security.Security_Guard import inspect_query
-from auth.auth_handler import verify_password, create_token, verify_jwt
+from database.models import Query, Evaluation, Probability, Feedback, Usage, AuditLog
+from auth.auth_handler import verify_password, create_token, signing_key
 from auth import user_store
+from core.service import process_query, QueryRejected, PipelineUnavailable
 
-import time
+@asynccontextmanager
+async def lifespan(app):
+    signing_key()
+    yield
 
-# ──────────────────────────────────────────
-# APP SETUP
-# ──────────────────────────────────────────
-
-app = FastAPI(
-    title="Adaptive AI Orchestration System",
-    description="Intelligent query routing across multiple LLM models",
-    version="2.0.0"
-)
-
+app = FastAPI(title="Adaptive LLM Router", version="3.0.0", lifespan=lifespan)
 app.state.limiter = limiter
 app.add_exception_handler(RateLimitExceeded, _rate_limit_exceeded_handler)
-
-ALLOWED_ORIGINS = [
-    "http://localhost:8501", "http://127.0.0.1:8501",
-    "http://localhost:8000", "http://127.0.0.1:8000",
-    "http://localhost:3000", "null",
-]
-
-app.add_middleware(
-    CORSMiddleware,
-    allow_origins=ALLOWED_ORIGINS, allow_credentials=True,
-    allow_methods=["GET", "POST"],
-    allow_headers=["Content-Type", "X-API-Key", "Authorization"],
-)
-
-
-# ──────────────────────────────────────────
-# TOKEN COST CALCULATION
-# Real AWS Bedrock pricing per 1K tokens
-# ──────────────────────────────────────────
-
-MODEL_PRICING = {
-    "nova-micro": {"input": 0.000035,  "output": 0.000140},
-    "llama3-8b":  {"input": 0.000220,  "output": 0.000220},
-    "haiku":      {"input": 0.000720,  "output": 0.000720},
-}
-
-def estimate_tokens_from_text(text: str) -> int:
-    """Fallback: ~4 chars per token."""
-    return max(1, len(text) // 4)
-
-def calculate_cost(model: str, input_tokens: int, output_tokens: int) -> float:
-    """Calculate USD cost from token counts."""
-    pricing = MODEL_PRICING.get(model, MODEL_PRICING["llama3-8b"])
-    cost = (input_tokens  / 1000 * pricing["input"] +
-            output_tokens / 1000 * pricing["output"])
-    return round(cost, 8)
-
-def resolve_token_usage(result: dict, query_text: str, model: str) -> dict:
-    """
-    Priority:
-    1. Use Bedrock metadata if present (exact)
-    2. Estimate from text length (fallback)
-    """
-    input_tokens  = result.get("input_tokens")
-    output_tokens = result.get("output_tokens")
-
-    # Fallback estimation if Bedrock didn't return counts
-    if input_tokens is None:
-        input_tokens = estimate_tokens_from_text(query_text)
-    if output_tokens is None:
-        output_tokens = estimate_tokens_from_text(result.get("response", ""))
-
-    total_tokens   = input_tokens + output_tokens
-    estimated_cost = calculate_cost(model, input_tokens, output_tokens)
-
-    return {
-        "input_tokens":   input_tokens,
-        "output_tokens":  output_tokens,
-        "total_tokens":   total_tokens,
-        "estimated_cost": estimated_cost,
-    }
-
-
-# ──────────────────────────────────────────
-# BACKGROUND EVALUATION + LEARNING
-# ──────────────────────────────────────────
-
-def run_evaluation(query_id, query, response, context,
-                   model_used, complexity, latency_ms):
-    from Evaluation.Evaluator import evaluate_response
-    from Learning.learning import update_model_probabilities
-    from database.connection import SessionLocal
-
-    db = SessionLocal()
-    try:
-        scores = evaluate_response(query, response, context)
-        if scores["success"]:
-            crud.save_evaluation(
-                db=db, query_id=query_id,
-                relevance=scores["relevance"], correctness=scores["correctness"],
-                completeness=scores["completeness"], quality_score=scores["quality_score"],
-                reasoning=scores["reasoning"]
-            )
-            print(f"✅ Evaluation saved — query {query_id} quality={scores['quality_score']}")
-
-            result = update_model_probabilities(
-                db=db, model=model_used, complexity=complexity,
-                quality_score=scores["quality_score"], latency_ms=latency_ms
-            )
-            if result:
-                print(f"✅ Probabilities updated — {model_used}+{complexity} "
-                      f"p_quality: {result['old_p_quality']} → {result['new_p_quality']}")
-        else:
-            print(f"⚠️ Evaluation failed: {scores['reasoning']}")
-    except Exception as e:
-        print(f"❌ Background evaluation error: {e}")
-    finally:
-        db.close()
-
-
-# ──────────────────────────────────────────
-# ENDPOINT 1 — HEALTH CHECK (public)
-# ──────────────────────────────────────────
+origins = [x.strip() for x in os.getenv("ALLOWED_ORIGINS", "http://localhost:8000,http://127.0.0.1:8000").split(",")]
+app.add_middleware(CORSMiddleware, allow_origins=origins, allow_credentials=False,
+                   allow_methods=["GET", "POST"], allow_headers=["Content-Type", "Authorization"])
 
 @app.get("/api/health", response_model=HealthResponse)
-def health_check(db: Session = Depends(get_db)):
+def health_check(db: Session=Depends(get_db)):
     try:
         db.execute(text("SELECT 1"))
-        db_status = "connected"
-    except:
-        db_status = "disconnected"
-    return HealthResponse(status="ok", database=db_status,
-                          message="Adaptive AI Orchestration System is running")
+    except Exception:
+        raise HTTPException(503, "Database unavailable.")
+    return HealthResponse(status="ok", database="connected", message="API and database reachable")
 
-
-# ──────────────────────────────────────────
-# ENDPOINT 2 — REGISTER (public)
-# ──────────────────────────────────────────
-
-@app.post("/api/auth/register", response_model=UserResponse)
-def register(body: RegisterRequest):
-    if user_store.get_user_by_username(body.username):
-        raise HTTPException(status_code=400, detail="Username already taken.")
-    if user_store.get_user_by_email(body.email):
-        raise HTTPException(status_code=400, detail="Email already registered.")
-
-    user = user_store.create_user(
-        username=body.username, email=body.email, password=body.password
-    )
-    return UserResponse(id=user.id, username=user.username,
-                        email=user.email, is_active=user.is_active)
-
-
-# ──────────────────────────────────────────
-# ENDPOINT 3 — LOGIN (public)
-# ──────────────────────────────────────────
+@app.post("/api/auth/register", response_model=UserResponse, status_code=201)
+@limiter.limit("5/minute")
+def register(request: Request, body: RegisterRequest, db: Session=Depends(get_db)):
+    reserved = {s.strip().casefold() for s in os.getenv("ADMIN_USERNAMES", "").split(",")}
+    if body.username.casefold() in reserved:
+        raise HTTPException(409, "Username is reserved.")
+    if user_store.get_user_by_username(db, body.username) or user_store.get_user_by_email(db, body.email):
+        raise HTTPException(409, "Username or email already registered.")
+    try:
+        return user_store.create_user(db, body.username, body.email, body.password)
+    except IntegrityError:
+        db.rollback()
+        raise HTTPException(409, "Username or email already registered.")
 
 @app.post("/api/auth/login", response_model=TokenResponse)
-def login(body: LoginRequest):
-    user = user_store.get_user_by_username(body.username)
+@limiter.limit("10/minute")
+def login(request: Request, body: LoginRequest, db: Session=Depends(get_db)):
+    user = user_store.get_user_by_username(db, body.username)
     if not user or not verify_password(body.password, user.hashed_password):
-        raise HTTPException(status_code=401, detail="Incorrect username or password.")
+        raise HTTPException(401, "Incorrect username or password.")
     if not user.is_active:
-        raise HTTPException(status_code=403, detail="Account is disabled.")
-
-    token = create_token(user_id=user.id, username=user.username)
-    return TokenResponse(
-        access_token=token, token_type="bearer",
-        username=user.username, message=f"Welcome back, {user.username}!"
-    )
-
-
-# ──────────────────────────────────────────
-# ENDPOINT 4 — GET CURRENT USER (JWT)
-# ──────────────────────────────────────────
+        raise HTTPException(403, "Account is disabled.")
+    return TokenResponse(access_token=create_token(user.id, user.username),
+                         username=user.username, message="Signed in.")
 
 @app.get("/api/auth/me", response_model=UserResponse)
-def get_me(token_data: dict = Depends(verify_jwt)):
-    user = user_store.get_user_by_id(int(token_data["sub"]))
-    if not user:
-        raise HTTPException(status_code=404, detail="User not found.")
-    return UserResponse(id=user.id, username=user.username,
-                        email=user.email, is_active=user.is_active)
-
-
-# ──────────────────────────────────────────
-# ENDPOINT 5 — MAIN CHAT (JWT protected)
-# ──────────────────────────────────────────
+def get_me(user=Depends(current_user)):
+    return user
 
 @app.post("/api/chat", response_model=ChatResponse)
 @limiter.limit("10/minute")
-def chat(
-    request: Request,
-    body: ChatRequest,
-    background_tasks: BackgroundTasks,
-    db: Session = Depends(get_db),
-    token_data: dict = Depends(verify_jwt)
-):
-    start_time = time.time()
+def chat(request: Request, body: ChatRequest, db: Session=Depends(get_db), user=Depends(current_user)):
+    try:
+        row = process_query(db, user.id, body.query, body.session_id)
+    except QueryRejected as exc:
+        db.add(AuditLog(event_type="blocked", api_key=str(user.id), detail={"reason": str(exc)}))
+        db.commit()
+        raise HTTPException(400, str(exc))
+    except PipelineUnavailable as exc:
+        raise HTTPException(503, {"message": str(exc), "query_id": exc.query_id})
+    return ChatResponse(response=row.response, strategy_used=row.strategy, model_used=row.model_used,
+        selected_model=row.selected_model, complexity=row.complexity, latency_ms=row.latency_ms,
+        model_latency_ms=row.model_latency_ms, query_id=row.id, fallback_used=row.fallback_used,
+        abstained=row.status == "abstained", evaluation_status=row.evaluation_status,
+        sources=row.sources, routing_reasons=row.routing_details["analysis"]["routing_reasons"])
 
-    # ── Step 0: Security Guard ──
-    routing_preview = orchestrate(body.query)
-    security = inspect_query(body.query,
-                              retrieval_needed=routing_preview["retrieval_needed"])
-    if not security["safe"]:
-        crud.save_audit_log(db=db, event_type="blocked",
-                            detail={"reason": security["reason"],
-                                    "query": body.query[:200],
-                                    "user": token_data.get("username")},
-                            api_key=token_data.get("sub", ""))
-        raise HTTPException(status_code=400, detail=security["reason"])
+def owned_query(db, query_id, user_id):
+    row = db.query(Query).filter_by(id=query_id, user_id=user_id).first()
+    if row is None:
+        raise HTTPException(404, "Query not found.")
+    return row
 
-    clean_query = security["clean_query"]
-
-    # ── Step 1: Orchestrate ──
-    routing            = orchestrate(clean_query)
-    intent             = routing["intent"]
-    complexity         = routing["complexity"]
-    strategy           = routing["strategy"]
-    execution_strategy = routing["execution_strategy"]
-    retrieval_needed   = routing["retrieval_needed"]
-
-    # ── Step 2: Decision Engine ──
-    decision = select_best_model(db, complexity)
-    model    = decision["selected_model"]
-
-    # ── Step 3: RAG ──
-    context = None
-    if retrieval_needed:
-        rag_result = retrieve(clean_query)
-        context    = rag_result["context"] if rag_result["found"] else None
-
-    # ── Step 4: Execute ──
-    result        = execute_query(query=clean_query, model=model,
-                                  strategy=strategy, context=context)
-    response_text = result["response"]
-    model_used    = result["model_used"]
-    fallback_used = result["fallback_used"]
-    latency_ms    = int((time.time() - start_time) * 1000)
-
-    # ── Step 4b: Resolve token usage + cost ──
-    tokens = resolve_token_usage(result, clean_query, model_used)
-    print(f"📊 Tokens — input: {tokens['input_tokens']}  "
-          f"output: {tokens['output_tokens']}  "
-          f"total: {tokens['total_tokens']}  "
-          f"cost: ${tokens['estimated_cost']}")
-
-    # ── Step 5: Save (with tokens) ──
-    saved_query = crud.save_query(
-        db            = db,
-        session_id    = body.session_id,
-        query_text    = clean_query,
-        intent        = intent,
-        complexity    = complexity,
-        strategy      = execution_strategy,
-        model_used    = model_used,
-        response      = response_text,
-        latency_ms    = latency_ms,
-        fallback_used = fallback_used,
-        # ── token fields ──
-        input_tokens   = tokens["input_tokens"],
-        output_tokens  = tokens["output_tokens"],
-        total_tokens   = tokens["total_tokens"],
-        estimated_cost = tokens["estimated_cost"],
-    )
-
-    # ── Step 6: Audit ──
-    crud.save_audit_log(
-        db=db, event_type="request",
-        detail={
-            "query_id":          saved_query.id,
-            "user":              token_data.get("username"),
-            "session_id":        body.session_id,
-            "intent":            intent,
-            "complexity":        complexity,
-            "model":             model_used,
-            "strategy":          execution_strategy,
-            "retrieval_needed":  retrieval_needed,
-            "rag_context_found": context is not None,
-            "latency_ms":        latency_ms,
-            "fallback":          fallback_used,
-            "total_tokens":      tokens["total_tokens"],
-            "estimated_cost":    tokens["estimated_cost"],
-        },
-        api_key=token_data.get("sub", "")
-    )
-
-    # ── Step 7: Background evaluation ──
-    background_tasks.add_task(
-        run_evaluation, query_id=saved_query.id, query=clean_query,
-        response=response_text, context=context,
-        model_used=model_used, complexity=complexity, latency_ms=latency_ms
-    )
-
-    return ChatResponse(
-        response=response_text, strategy_used=execution_strategy,
-        model_used=model_used, latency_ms=latency_ms,
-        quality_score=0.0, query_id=saved_query.id
-    )
-
-
-# ──────────────────────────────────────────
-# ENDPOINT 6 — FEEDBACK (JWT)
-# ──────────────────────────────────────────
+@app.get("/api/queries/{query_id}/evaluation", response_model=EvaluationResponse)
+def evaluation_status(query_id: int, db: Session=Depends(get_db), user=Depends(current_user)):
+    row = owned_query(db, query_id, user.id)
+    evaluation = db.query(Evaluation).filter_by(query_id=row.id).first()
+    return EvaluationResponse(query_id=row.id, status=row.evaluation_status,
+        quality_score=evaluation.quality_score if evaluation else None,
+        reasoning=evaluation.reasoning if evaluation else None)
 
 @app.post("/api/feedback", response_model=FeedbackResponse)
-def submit_feedback(body: FeedbackRequest, db: Session = Depends(get_db),
-                    token_data: dict = Depends(verify_jwt)):
-    crud.save_feedback(db=db, query_id=body.query_id,
-                       rating=body.rating, comment=body.comment)
-    return FeedbackResponse(success=True, message="Feedback saved successfully.")
-
-
-# ──────────────────────────────────────────
-# ENDPOINT 7 — METRICS (JWT)
-# ──────────────────────────────────────────
+def submit_feedback(body: FeedbackRequest, db: Session=Depends(get_db), user=Depends(current_user)):
+    owned_query(db, body.query_id, user.id)
+    if db.query(Feedback).filter_by(query_id=body.query_id).first():
+        raise HTTPException(409, "Feedback already submitted.")
+    db.add(Feedback(**body.model_dump()))
+    try:
+        db.commit()
+    except IntegrityError:
+        db.rollback()
+        raise HTTPException(409, "Feedback already submitted.")
+    return FeedbackResponse(success=True, message="Feedback saved for human evaluation; it does not train the router.")
 
 @app.get("/api/metrics", response_model=MetricsResponse)
-def get_metrics(db: Session = Depends(get_db),
-                token_data: dict = Depends(verify_jwt)):
-    total_queries = db.query(Query).count()
-    avg_latency   = db.query(func.avg(Query.latency_ms)).scalar() or 0.0
-    avg_quality   = db.query(func.avg(Evaluation.quality_score)).scalar() or 0.0
-    strategy_rows = db.query(Query.strategy, func.count(Query.id)).group_by(Query.strategy).all()
-    model_rows    = db.query(Query.model_used, func.count(Query.id)).group_by(Query.model_used).all()
-
-    return MetricsResponse(
-        total_queries=total_queries, average_latency_ms=round(avg_latency, 2),
-        average_quality_score=round(avg_quality, 4),
-        strategy_breakdown={r[0]: r[1] for r in strategy_rows},
-        model_breakdown={r[0]: r[1] for r in model_rows}
-    )
-
-
-# ──────────────────────────────────────────
-# ENDPOINT 8 — PROBABILITIES (JWT)
-# ──────────────────────────────────────────
+def get_metrics(db: Session=Depends(get_db), user=Depends(admin_user)):
+    rows = db.query(Query).filter(Query.status.in_(["completed", "abstained"]))
+    total = rows.count()
+    latency = rows.with_entities(func.avg(Query.latency_ms)).scalar() or 0
+    quality = db.query(func.avg(Evaluation.quality_score)).scalar() or 0
+    stage_costs = db.query(Usage.stage, func.sum(Usage.estimated_cost)).group_by(Usage.stage).all()
+    return MetricsResponse(total_queries=total, average_latency_ms=round(latency, 2),
+        average_quality_score=round(quality, 4),
+        strategy_breakdown=dict(rows.with_entities(Query.strategy, func.count(Query.id)).group_by(Query.strategy).all()),
+        model_breakdown=dict(rows.with_entities(Query.model_used, func.count(Query.id)).group_by(Query.model_used).all()),
+        cost_by_stage={s: float(c or 0) for s,c in stage_costs},
+        unknown_cost_attempts=db.query(Usage).filter(Usage.estimated_cost.is_(None)).count())
 
 @app.get("/api/probabilities", response_model=list[ProbabilityResponse])
-def get_probabilities(db: Session = Depends(get_db),
-                      token_data: dict = Depends(verify_jwt)):
-    rows = crud.get_all_probabilities(db)
-    return [
-        ProbabilityResponse(
-            model=r.model, complexity=r.complexity, p_quality=r.p_quality,
-            p_latency=r.p_latency, p_cost=r.p_cost, sample_count=r.sample_count
-        )
-        for r in rows
-    ]
+def get_probabilities(db: Session=Depends(get_db), user=Depends(admin_user)):
+    return [ProbabilityResponse(model=p.model, complexity=p.complexity, p_quality=p.p_quality,
+        p_latency=p.p_latency, p_cost=p.p_cost, sample_count=p.sample_count) for p in db.query(Probability).all()]
 
-
-# ──────────────────────────────────────────
-# RUN SERVER
-# ──────────────────────────────────────────
-
+app.mount("/", StaticFiles(directory=Path(__file__).resolve().parents[1]/"Frontend", html=True), name="frontend")
 if __name__ == "__main__":
     import uvicorn
-    uvicorn.run("Backend.main:app", host="0.0.0.0", port=8000, reload=True)
+    uvicorn.run("Backend.main:app", host="127.0.0.1", port=8000)

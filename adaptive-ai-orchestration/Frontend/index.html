@@ -1114,8 +1114,8 @@ body {
     </div>
 
     <form class="auth-form" id="login-form" onsubmit="loginUser(event)">
-      <input class="auth-input" id="login-username" placeholder="Username" value="tejasv" autocomplete="username"/>
-      <input class="auth-input" id="login-password" placeholder="Password" type="password" value="mypassword123" autocomplete="current-password"/>
+      <input class="auth-input" id="login-username" placeholder="Username" autocomplete="username"/>
+      <input class="auth-input" id="login-password" placeholder="Password" type="password" autocomplete="current-password"/>
       <button class="auth-submit" id="login-submit" type="submit">Sign in</button>
     </form>
 
@@ -1128,10 +1128,7 @@ body {
 
     <div class="auth-error" id="auth-error"></div>
 
-    <div class="auth-demo">
-      <strong>Demo account</strong><br>
-      Username: tejasv &nbsp;·&nbsp; Password: mypassword123
-    </div>
+    <div class="auth-demo">Create an account to use single-turn document Q&amp;A.</div>
   </div>
 </div>
 
@@ -1250,15 +1247,14 @@ body {
 /* ═══════════════════════════════════════════════
    CONSTANTS & STATE
    ═══════════════════════════════════════════════ */
-const API_BASE  = "http://localhost:8000";
-const API_KEY   = "adaptive-ai-key-001";
+const API_BASE = window.location.origin;
 const SESSION   = "frontend-" + Math.random().toString(36).slice(2, 9);
 const TOKEN_KEY = "adaptive_ai_jwt";
 const THEME_KEY = "adaptive_ai_theme";
 
 let queryCount  = 0;
 let isLoading   = false;
-let authToken   = localStorage.getItem(TOKEN_KEY) || "";
+let authToken   = sessionStorage.getItem(TOKEN_KEY) || "";
 let currentUser = null;
 
 const MODEL_DISPLAY = {
@@ -1362,7 +1358,7 @@ async function loginUser(event) {
       password: document.getElementById("login-password").value
     });
     authToken = data.access_token;
-    localStorage.setItem(TOKEN_KEY, authToken);
+    sessionStorage.setItem(TOKEN_KEY, authToken);
     await loadCurrentUser();
   } catch (err) {
     error.textContent = err.message;
@@ -1414,7 +1410,7 @@ async function loadCurrentUser() {
     document.getElementById("user-badge").textContent = currentUser.username;
     document.getElementById("logout-btn").style.display = "inline-flex";
   } catch {
-    localStorage.removeItem(TOKEN_KEY);
+    sessionStorage.removeItem(TOKEN_KEY);
     authToken = "";
     setLoggedOut();
   }
@@ -1428,7 +1424,11 @@ function setLoggedOut() {
 }
 
 function logoutUser() {
-  localStorage.removeItem(TOKEN_KEY);
+  document.getElementById("messages-inner").replaceChildren();
+  document.querySelectorAll(".routing-card").forEach(card => card.remove());
+  queryCount = 0;
+  updateRoutingCount();
+  sessionStorage.removeItem(TOKEN_KEY);
   authToken = "";
   setLoggedOut();
 }
@@ -1468,14 +1468,17 @@ async function sendQuery() {
       method:  "POST",
       headers: {
         "Content-Type": "application/json",
-        "X-API-Key":    API_KEY,
         "Authorization": `Bearer ${authToken}`
       },
       body: JSON.stringify({ query: text, session_id: SESSION })
     });
 
-    if (!res.ok) throw new Error(`API error ${res.status}`);
     const data = await res.json();
+    if (!res.ok) {
+      if (res.status === 401) logoutUser();
+      const detail = typeof data.detail === "string" ? data.detail : data.detail?.message;
+      throw new Error(detail || (Array.isArray(data.detail) ? "Please check the input length." : `API error ${res.status}`));
+    }
 
     removeTyping(typingId);
     appendMessage("ai", data.response);
@@ -1576,15 +1579,15 @@ function updateRoutingCount() {
 function addRoutingCard(qNum, query, data) {
   const side = document.getElementById("side-content");
 
-  const model        = data.model_used || "unknown";
-  const selectedModel = data.selected_model || model;
+  const model = escapeHtml(data.model_used || "unknown");
+  const selectedModel = escapeHtml(data.selected_model || model);
   const mInfo        = MODEL_DISPLAY[model]         || { label: model,         cls: "tag-default" };
   const selectedInfo = MODEL_DISPLAY[selectedModel] || { label: selectedModel, cls: "tag-default" };
-  const lat          = data.latency_ms   || 0;
+  const lat = Number(data.latency_ms || 0);
   const strat        = data.strategy_used || "—";
-  const quality      = data.quality_score || 0;
+  const quality = data.quality_score;
   const fallbackUsed = Boolean(data.fallback_used) || selectedModel !== model;
-  const qId          = data.query_id    || qNum;
+  const qId = Number(data.query_id || qNum);
   const complexity   = data.complexity  || "—";
   const compCls      = { low: "tag-low", medium: "tag-medium", high: "tag-high" }[complexity] || "tag-default";
 
@@ -1623,7 +1626,7 @@ function addRoutingCard(qNum, query, data) {
         <span class="routing-label">Latency</span>
         <span class="routing-value tag-default">${lat} ms</span>
       </div>
-      ${quality > 0 ? `
+      ${quality != null ? `
       <div class="divider-row"></div>
       <div class="quality-bar-section">
         <div class="quality-bar-row">
@@ -1642,6 +1645,14 @@ function addRoutingCard(qNum, query, data) {
   `;
 
   side.insertBefore(card, side.firstChild);
+  if (data.sources?.length) {
+    const sourceList = document.createElement("div");
+    sourceList.className = "input-hint";
+    sourceList.textContent = data.sources.map((s, i) => `[${i+1}] ${s.source}, page ${s.page}`).join("; ");
+    card.appendChild(sourceList);
+  }
+  if (data.routing_reasons?.length) card.title = data.routing_reasons.join("; ");
+  if (data.evaluation_status === "pending") pollEvaluation(qId, authToken);
 
   // remove highlight after 2s
   setTimeout(() => card.classList.remove("highlight"), 2000);

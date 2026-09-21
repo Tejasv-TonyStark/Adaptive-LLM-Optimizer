@@ -1,61 +1,30 @@
-from sqlalchemy import create_engine
-from sqlalchemy.orm import sessionmaker, DeclarativeBase
-from dotenv import load_dotenv
+"""PostgreSQL in deployment; explicit SQLite URL supported for offline tests."""
 import os
-
-# Load environment variables from .env
+from dotenv import load_dotenv
+from sqlalchemy import create_engine
+from sqlalchemy.engine import URL
+from sqlalchemy.orm import sessionmaker, DeclarativeBase
 load_dotenv()
-
-# Read database credentials
-USER = os.getenv("user")
-PASSWORD = os.getenv("password")
-HOST = os.getenv("host")
-PORT = os.getenv("port")
-DBNAME = os.getenv("dbname")
-
-# Validate required env variables
-if not all([USER, PASSWORD, HOST, PORT, DBNAME]):
-    raise ValueError("One or more database environment variables are missing.")
-
-# Construct database URL
-DATABASE_URL = (
-    f"postgresql+psycopg2://{USER}:{PASSWORD}@{HOST}:{PORT}/{DBNAME}?sslmode=require"
-)
-
-# Create SQLAlchemy engine
-engine = create_engine(
-    DATABASE_URL,
-    pool_pre_ping=True
-)
-
-# Session factory
-SessionLocal = sessionmaker(
-    autocommit=False,
-    autoflush=False,
-    bind=engine
-)
-
-# Base class for ORM models
+DATABASE_URL = os.getenv("DATABASE_URL")
+if not DATABASE_URL:
+    values = [os.getenv(k) for k in ("user", "password", "host", "port", "dbname")]
+    if not all(values):
+        raise ValueError("Set DATABASE_URL (or legacy user/password/host/port/dbname variables).")
+    DATABASE_URL = URL.create("postgresql+psycopg2", username=values[0], password=values[1],
+                             host=values[2], port=int(values[3]), database=values[4],
+                             query={"sslmode": "require"})
+kwargs = {"pool_pre_ping": True}
+if str(DATABASE_URL).startswith("sqlite"):
+    kwargs["connect_args"] = {"check_same_thread": False}
+engine = create_engine(DATABASE_URL, **kwargs)
+if engine.dialect.name == "sqlite":
+    from sqlalchemy import event
+    @event.listens_for(engine, "connect")
+    def sqlite_foreign_keys(connection, record):
+        connection.execute("PRAGMA foreign_keys=ON")
+SessionLocal = sessionmaker(bind=engine, expire_on_commit=False)
 class Base(DeclarativeBase):
     pass
-
-
-# Dependency/helper for DB session management
 def get_db():
-    db = SessionLocal()
-    try:
+    with SessionLocal() as db:
         yield db
-    finally:
-        db.close()
-
-
-# Optional connectivity test
-if __name__ == "__main__":
-    try:
-        with engine.connect() as connection:
-            print("✅ Database connection successful!")
-    except Exception as e:
-        print("❌ Database connection failed:", e)
-
-
-        

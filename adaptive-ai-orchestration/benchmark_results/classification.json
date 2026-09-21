@@ -1,0 +1,455 @@
+{
+  "kind": "offline classification; no model quality or cost claims",
+  "total": 32,
+  "passed": 31,
+  "results": [
+    {
+      "id": "GT-01",
+      "expected": {
+        "intent": "specific",
+        "complexity": "low",
+        "retrieval_needed": true
+      },
+      "actual": {
+        "intent": "specific",
+        "complexity": "low",
+        "retrieval_needed": true
+      },
+      "passed": true
+    },
+    {
+      "id": "GT-02",
+      "expected": {
+        "intent": "specific",
+        "complexity": "low",
+        "retrieval_needed": true
+      },
+      "actual": {
+        "intent": "specific",
+        "complexity": "low",
+        "retrieval_needed": true
+      },
+      "passed": true
+    },
+    {
+      "id": "GT-03",
+      "expected": {
+        "intent": "specific",
+        "complexity": "low",
+        "retrieval_needed": true
+      },
+      "actual": {
+        "intent": "specific",
+        "complexity": "low",
+        "retrieval_needed": true
+      },
+      "passed": true
+    },
+    {
+      "id": "GT-04",
+      "expected": {
+        "intent": "specific",
+        "complexity": "low",
+        "retrieval_needed": true
+      },
+      "actual": {
+        "intent": "specific",
+        "complexity": "low",
+        "retrieval_needed": true
+      },
+      "passed": true
+    },
+    {
+      "id": "GT-05",
+      "expected": {
+        "intent": "specific",
+        "complexity": "low",
+        "retrieval_needed": true
+      },
+      "actual": {
+        "intent": "specific",
+        "complexity": "low",
+        "retrieval_needed": true
+      },
+      "passed": true
+    },
+    {
+      "id": "GT-06",
+      "expected": {
+        "intent": "specific",
+        "complexity": "low",
+        "retrieval_needed": true
+      },
+      "actual": {
+        "intent": "specific",
+        "complexity": "low",
+        "retrieval_needed": true
+      },
+      "passed": true
+    },
+    {
+      "id": "GT-07",
+      "expected": {
+        "intent": "specific",
+        "complexity": "low",
+        "retrieval_needed": true
+      },
+      "actual": {
+        "intent": "specific",
+        "complexity": "low",
+        "retrieval_needed": true
+      },
+      "passed": true
+    },
+    {
+      "id": "GT-08",
+      "expected": {
+        "intent": "specific",
+        "complexity": "low",
+        "retrieval_needed": true
+      },
+      "actual": {
+        "intent": "specific",
+        "complexity": "low",
+        "retrieval_needed": true
+      },
+      "passed": true
+    },
+    {
+      "id": "GT-09",
+      "expected": {
+        "intent": "specific",
+        "complexity": "low",
+        "retrieval_needed": true
+      },
+      "actual": {
+        "intent": "specific",
+        "complexity": "low",
+        "retrieval_needed": true
+      },
+      "passed": true
+    },
+    {
+      "id": "GT-10",
+      "expected": {
+        "intent": "specific",
+        "complexity": "low",
+        "retrieval_needed": true
+      },
+      "actual": {
+        "intent": "specific",
+        "complexity": "low",
+        "retrieval_needed": true
+      },
+      "passed": true
+    },
+    {
+      "id": "GT-11",
+      "expected": {
+        "intent": "specific",
+        "complexity": "low",
+        "retrieval_needed": true
+      },
+      "actual": {
+        "intent": "specific",
+        "complexity": "low",
+        "retrieval_needed": true
+      },
+      "passed": true
+    },
+    {
+      "id": "GT-12",
+      "expected": {
+        "intent": "specific",
+        "complexity": "low",
+        "retrieval_needed": true
+      },
+      "actual": {
+        "intent": "specific",
+        "complexity": "low",
+        "retrieval_needed": true
+      },
+      "passed": true
+    },
+    {
+      "id": "GEN-01",
+      "expected": {
+        "intent": "general",
+        "complexity": "low",
+        "retrieval_needed": false
+      },
+      "actual": {
+        "intent": "general",
+        "complexity": "low",
+        "retrieval_needed": false
+      },
+      "passed": true
+    },
+    {
+      "id": "GEN-02",
+      "expected": {
+        "intent": "general",
+        "complexity": "low",
+        "retrieval_needed": false
+      },
+      "actual": {
+        "intent": "general",
+        "complexity": "low",
+        "retrieval_needed": false
+      },
+      "passed": true
+    },
+    {
+      "id": "GEN-03",
+      "expected": {
+        "intent": "general",
+        "complexity": "low",
+        "retrieval_needed": false
+      },
+      "actual": {
+        "intent": "general",
+        "complexity": "low",
+        "retrieval_needed": false
+      },
+      "passed": true
+    },
+    {
+      "id": "GEN-04",
+      "expected": {
+        "intent": "general",
+        "complexity": "low",
+        "retrieval_needed": false
+      },
+      "actual": {
+        "intent": "general",
+        "complexity": "low",
+        "retrieval_needed": false
+      },
+      "passed": true
+    },
+    {
+      "id": "GEN-05",
+      "expected": {
+        "intent": "general",
+        "complexity": "medium",
+        "retrieval_needed": false
+      },
+      "actual": {
+        "intent": "general",
+        "complexity": "medium",
+        "retrieval_needed": false
+      },
+      "passed": true
+    },
+    {
+      "id": "GEN-06",
+      "expected": {
+        "intent": "general",
+        "complexity": "low",
+        "retrieval_needed": false
+      },
+      "actual": {
+        "intent": "general",
+        "complexity": "low",
+        "retrieval_needed": false
+      },
+      "passed": true
+    },
+    {
+      "id": "GEN-07",
+      "expected": {
+        "intent": "general",
+        "complexity": "medium",
+        "retrieval_needed": false
+      },
+      "actual": {
+        "intent": "general",
+        "complexity": "medium",
+        "retrieval_needed": false
+      },
+      "passed": true
+    },
+    {
+      "id": "GEN-08",
+      "expected": {
+        "intent": "general",
+        "complexity": "medium",
+        "retrieval_needed": false
+      },
+      "actual": {
+        "intent": "general",
+        "complexity": "medium",
+        "retrieval_needed": false
+      },
+      "passed": true
+    },
+    {
+      "id": "HIGH-01",
+      "expected": {
+        "intent": "general",
+        "complexity": "high",
+        "retrieval_needed": false
+      },
+      "actual": {
+        "intent": "general",
+        "complexity": "high",
+        "retrieval_needed": false
+      },
+      "passed": true
+    },
+    {
+      "id": "HIGH-02",
+      "expected": {
+        "intent": "general",
+        "complexity": "high",
+        "retrieval_needed": false
+      },
+      "actual": {
+        "intent": "general",
+        "complexity": "high",
+        "retrieval_needed": false
+      },
+      "passed": true
+    },
+    {
+      "id": "HIGH-03",
+      "expected": {
+        "intent": "general",
+        "complexity": "high",
+        "retrieval_needed": false
+      },
+      "actual": {
+        "intent": "general",
+        "complexity": "high",
+        "retrieval_needed": false
+      },
+      "passed": true
+    },
+    {
+      "id": "RAG-13",
+      "expected": {
+        "intent": "specific",
+        "complexity": "low",
+        "retrieval_needed": true
+      },
+      "actual": {
+        "intent": "specific",
+        "complexity": "low",
+        "retrieval_needed": true
+      },
+      "passed": true
+    },
+    {
+      "id": "RAG-14",
+      "expected": {
+        "intent": "specific",
+        "complexity": "medium",
+        "retrieval_needed": true
+      },
+      "actual": {
+        "intent": "specific",
+        "complexity": "medium",
+        "retrieval_needed": true
+      },
+      "passed": true
+    },
+    {
+      "id": "RAG-15",
+      "expected": {
+        "intent": "specific",
+        "complexity": "low",
+        "retrieval_needed": true
+      },
+      "actual": {
+        "intent": "specific",
+        "complexity": "low",
+        "retrieval_needed": true
+      },
+      "passed": true
+    },
+    {
+      "id": "NONE-01",
+      "expected": {
+        "intent": "specific",
+        "complexity": "low",
+        "retrieval_needed": true
+      },
+      "actual": {
+        "intent": "specific",
+        "complexity": "low",
+        "retrieval_needed": true
+      },
+      "passed": true
+    },
+    {
+      "id": "NONE-02",
+      "expected": {
+        "intent": "specific",
+        "complexity": "low",
+        "retrieval_needed": true
+      },
+      "actual": {
+        "intent": "specific",
+        "complexity": "medium",
+        "retrieval_needed": true
+      },
+      "passed": false
+    },
+    {
+      "id": "TRAIN-01",
+      "expected": {
+        "intent": "general",
+        "complexity": "low",
+        "retrieval_needed": false
+      },
+      "actual": {
+        "intent": "general",
+        "complexity": "low",
+        "retrieval_needed": false
+      },
+      "passed": true
+    },
+    {
+      "id": "TRAIN-02",
+      "expected": {
+        "intent": "general",
+        "complexity": "medium",
+        "retrieval_needed": false
+      },
+      "actual": {
+        "intent": "general",
+        "complexity": "medium",
+        "retrieval_needed": false
+      },
+      "passed": true
+    },
+    {
+      "id": "TRAIN-03",
+      "expected": {
+        "intent": "general",
+        "complexity": "high",
+        "retrieval_needed": false
+      },
+      "actual": {
+        "intent": "general",
+        "complexity": "high",
+        "retrieval_needed": false
+      },
+      "passed": true
+    },
+    {
+      "id": "TRAIN-04",
+      "expected": {
+        "intent": "specific",
+        "complexity": "low",
+        "retrieval_needed": true
+      },
+      "actual": {
+        "intent": "specific",
+        "complexity": "low",
+        "retrieval_needed": true
+      },
+      "passed": true
+    }
+  ]
+}

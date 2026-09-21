@@ -1,87 +1,44 @@
-# auth/auth_handler.py
-
 from datetime import datetime, timedelta, timezone
 import os
-
 import bcrypt
 from dotenv import load_dotenv
 from fastapi import HTTPException, Security
 from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 from jose import JWTError, jwt
-
 load_dotenv()
-
-# CONFIG
-SECRET_KEY = os.getenv("JWT_SECRET_KEY", "fallback-secret-change-this")
 ALGORITHM = "HS256"
 TOKEN_EXPIRE_HOURS = 24
-
-
-# PASSWORD HASHING - bcrypt
-def hash_password(plain: str) -> str:
-    password_bytes = plain.encode("utf-8")
-    return bcrypt.hashpw(password_bytes, bcrypt.gensalt()).decode("utf-8")
-
-
-def verify_password(plain: str, hashed: str) -> bool:
+def signing_key():
+    key = os.getenv("JWT_SECRET_KEY", "")
+    if len(key.encode()) < 32 or key == "fallback-secret-change-this":
+        raise RuntimeError("JWT_SECRET_KEY must contain at least 32 bytes; generate a random secret.")
+    return key
+def hash_password(plain):
+    raw = plain.encode("utf-8")
+    if len(raw) > 72:
+        raise ValueError("Password exceeds bcrypt's 72-byte limit")
+    return bcrypt.hashpw(raw, bcrypt.gensalt()).decode()
+def verify_password(plain, hashed):
     try:
-        return bcrypt.checkpw(plain.encode("utf-8"), hashed.encode("utf-8"))
+        return bcrypt.checkpw(plain.encode(), hashed.encode())
     except (TypeError, ValueError):
         return False
-
-
-# JWT TOKEN
-def create_token(user_id: int, username: str) -> str:
+def create_token(user_id, username):
     now = datetime.now(timezone.utc)
-    payload = {
-        "sub": str(user_id),
-        "username": username,
-        "exp": now + timedelta(hours=TOKEN_EXPIRE_HOURS),
-        "iat": now,
-    }
-    return jwt.encode(payload, SECRET_KEY, algorithm=ALGORITHM)
-
-
-def decode_token(token: str) -> dict:
+    return jwt.encode(dict(sub=str(user_id), username=username, iat=now,
+                           exp=now+timedelta(hours=TOKEN_EXPIRE_HOURS)),
+                      signing_key(), algorithm=ALGORITHM)
+def decode_token(token):
     try:
-        return jwt.decode(token, SECRET_KEY, algorithms=[ALGORITHM])
+        data = jwt.decode(token, signing_key(), algorithms=[ALGORITHM],
+                          options={"require_exp": True, "require_iat": True, "require_sub": True})
+        if not isinstance(data["sub"], str) or not data["sub"].isdigit() or int(data["sub"]) < 1:
+            raise JWTError("Invalid subject")
+        return data
     except JWTError:
-        raise HTTPException(
-            status_code=401,
-            detail="Invalid or expired token. Please log in again.",
-        )
-
-
-# BEARER SCHEME
+        raise HTTPException(401, "Invalid or expired token.")
 bearer_scheme = HTTPBearer(auto_error=False)
-
-
-def verify_jwt(
-    credentials: HTTPAuthorizationCredentials = Security(bearer_scheme),
-) -> dict:
+def verify_jwt(credentials: HTTPAuthorizationCredentials=Security(bearer_scheme)):
     if not credentials:
-        raise HTTPException(status_code=401, detail="Not authenticated. Please log in.")
+        raise HTTPException(401, "Authentication required.")
     return decode_token(credentials.credentials)
-
-
-# TEST
-if __name__ == "__main__":
-    print("\n-- Auth Handler Test --\n")
-
-    raw = "mypassword123"
-    hashed = hash_password(raw)
-    print(f"[OK] Password hash:    {hashed[:30]}...")
-    print(f"[OK] Correct verify:   {verify_password(raw, hashed)}")
-    print(f"[OK] Wrong verify:     {verify_password('wrongpass', hashed)}")
-
-    token = create_token(user_id=1, username="tejasv")
-    payload = decode_token(token)
-    print(f"\n[OK] Token created:    {token[:40]}...")
-    print(f"[OK] Decoded user:     {payload['username']} (id={payload['sub']})")
-
-    try:
-        decode_token("invalid.token.here")
-    except Exception as exc:
-        print(f"[OK] Invalid rejected: {exc.detail}")
-
-    print("\n[OK] auth_handler.py working correctly!")

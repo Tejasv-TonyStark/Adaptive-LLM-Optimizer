@@ -13,9 +13,7 @@ INJECTION_PATTERNS = [
     r"ignore (all |previous |above |prior )*(instructions|prompt|context|rules|constraints)",
     r"disregard (all |previous |above |prior )?(instructions|prompt|context|rules)",
     r"forget (everything|all|what you were told|your instructions|your rules)",
-    r"you are now",
-    r"act as (if you are|a|an)",
-    r"pretend (you are|to be|that you)",
+    r"you are now (?:an? )?(?:unrestricted|unfiltered|jailbroken)",
     r"from now on (you are|act|behave|respond)",
     r"your new (role|persona|instructions|task|job|mission)",
     r"override (your |all |previous )?(instructions|settings|rules|constraints|limits)",
@@ -63,9 +61,6 @@ COMPILED_INJECTION = [
 
 DANGEROUS_PATTERNS = [
     r"<script.*?>.*?</script>",   # XSS
-    r"javascript:",               # JS injection
-    r"on\w+\s*=",                 # HTML event handlers
-    r"(--|;|/\*|\*/)",            # SQL injection fragments
     r"\x00",                      # null bytes
     r"[\x01-\x08\x0b\x0c\x0e-\x1f\x7f]",  # control characters
 ]
@@ -79,11 +74,7 @@ COMPILED_DANGEROUS = [
 # ──────────────────────────────────────────
 
 OUT_OF_SCOPE_PATTERNS = [
-    r"\b(bomb|explosive|weapon|hack|malware|virus|ransomware)\b",
-    r"\b(illegal|unlawful|criminal|fraud)\b",
-    r"\b(password|credentials|api.?key|secret.?key|access.?key)\b",
-    r"\b(social security|ssn|credit card|bank account)\b",
-    r"(competitor|rival) (document|policy|contract|handbook)",
+    r"(?i)(what is|show|reveal|give me) (my|our|the) (password|credentials|api.?key|secret.?key|access.?key)\b",
 ]
 
 COMPILED_OUT_OF_SCOPE = [
@@ -113,6 +104,8 @@ def inspect_query(query: str, retrieval_needed: bool = False) -> dict:
         )
 
     clean_query = sanitize(query)
+    if len(clean_query.strip()) < MIN_QUERY_LENGTH:
+        return _block("Query is empty after sanitization.")
 
     if _detect_injection(clean_query):
         return _block(
@@ -120,7 +113,8 @@ def inspect_query(query: str, retrieval_needed: bool = False) -> dict:
             "Please rephrase your question."
         )
 
-    if retrieval_needed and _check_rag_scope(clean_query):
+    # Credential requests are blocked regardless of the intent classifier.
+    if _check_rag_scope(clean_query):
         return _block(
             "This query is outside the scope of available documents. "
             "Please ask about company policies, guidelines, or procedures."
