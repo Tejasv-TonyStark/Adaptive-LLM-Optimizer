@@ -31,6 +31,8 @@ def analyze_complexity(query: str, intent: str) -> dict:
         reasons += tasks + constraints
     elif re.match(r"^(define\b|what is meant by\b|what is the definition of\b)", text):
         complexity, score, reasons = "low", 0, ["definition request"]
+    elif intent == "specific" and tasks and all(t in {"how do", "how does"} for t in tasks) and not constraints:
+        complexity, score, reasons = "low", 0, ["document procedure lookup"]
     elif tasks:
         complexity, score, reasons = "medium", 2, tasks + constraints
     elif re.match(r"^(what (?:is|are|does)\b|who\b|when\b|where\b|how (?:many|much)\b)", text) or (

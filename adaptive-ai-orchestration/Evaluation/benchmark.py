@@ -34,7 +34,7 @@ def live_policy(cases, policy):
     from sqlalchemy import create_engine
     from sqlalchemy.orm import sessionmaker
     from database.connection import Base
-    from database.models import User, Query, Evaluation, Usage
+    from database.models import User, Query, Evaluation, Usage, Probability
     from database.seed import seed_probabilities
     from core.service import process_query, PipelineUnavailable
     from Evaluation.worker import process_one
@@ -55,8 +55,8 @@ def live_policy(cases, policy):
             began=time.perf_counter()
             with factory() as db:
                 try:
-                    row=process_query(db,1,case["query"],"benchmark",policy="adaptive" if policy=="adaptive" else "static",
-                        force_model={"cheapest":"nova-micro","strongest":"llama3-70b"}.get(policy),
+                    row=process_query(db,1,case["query"],"benchmark-"+case["id"],policy="adaptive" if policy=="adaptive" else "static",
+                        force_model={"cheapest":"nova-micro","middle":"llama3-8b","strongest":"llama3-70b"}.get(policy),
                         evaluation_rate=1 if case["split"]=="train" else 0,allow_fallback=False)
                     query_id=row.id
                 except PipelineUnavailable as exc:
@@ -96,11 +96,16 @@ def live_policy(cases, policy):
                     cost_by_stage={s:sum(u.estimated_cost or 0 for u in usage if u.stage==s)
                                    for s in ("generation","embedding","judge")},
                     unknown_cost_attempts=sum(u.estimated_cost is None for u in usage)))
+        with factory() as db:
+            learned_updates=sum(p.sample_count for p in db.query(Probability).all())
         engine.dispose()
     heldout=[r for r in results if r["split"]=="heldout"]
     qualities=[r["quality"] for r in heldout if r["quality"] is not None]
     checks=[r["reference_checks_pass"] for r in heldout if r["reference_checks_pass"] is not None]
     return dict(policy=policy,heldout_queries=len(heldout),
+        learned_updates=learned_updates,
+        learning_note="Updates require an independent, current judge calibration report; otherwise seed assumptions remain.",
+        abstention_rate=sum(r["status"]=="abstained" for r in heldout)/max(len(heldout),1),
         average_quality=sum(qualities)/len(qualities) if qualities else None,
         judged_count=len(qualities),
         reference_pass_rate=sum(checks)/len(checks) if checks else None,
@@ -116,14 +121,15 @@ def main(default_suite="all"):
     parser=argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--live",action="store_true",help="Make paid Bedrock generation, embedding, and judge calls")
     parser.add_argument("--suite",choices=("all","rag"),default=default_suite)
+    parser.add_argument("--dataset",type=Path,default=DATASET)
     parser.add_argument("--output",type=Path,default=Path("benchmark_results/report.json"))
     args=parser.parse_args()
-    document=json.loads(DATASET.read_text(encoding="utf-8"))
+    document=json.loads(args.dataset.read_text(encoding="utf-8"))
     cases=[c for c in document["cases"] if args.suite=="all" or c["category"]=="rag"]
     if args.live:
         report=dict(kind="live held-out comparison",dataset_version=document["version"],
                     limitations=document["description"],
-                    policies=[live_policy(cases,p) for p in ("cheapest","strongest","static","adaptive")])
+                    policies=[live_policy(cases,p) for p in ("cheapest","middle","strongest","static","adaptive")])
     else:
         report=classification_report(cases)
     args.output.parent.mkdir(parents=True,exist_ok=True)

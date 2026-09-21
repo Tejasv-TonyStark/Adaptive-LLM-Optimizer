@@ -1,4 +1,4 @@
-"""Atomic online means with five seed pseudo-observations, not Bayesian inference."""
+"""Atomic online updates: seeded mean initially, then EWMA with alpha >= 0.1."""
 import math
 from sqlalchemy import update, case
 from database.models import Probability

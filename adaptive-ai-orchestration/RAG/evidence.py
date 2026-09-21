@@ -7,7 +7,7 @@ import re
 
 ABSTENTION = "Not found in the available documents."
 
-def render_evidence(raw, context):
+def render_evidence(raw, context, source_chunks=None):
     text = raw.strip()
     if text in {ABSTENTION, "Not found in the provided documents."}:
         return ABSTENTION, True
@@ -25,10 +25,14 @@ def render_evidence(raw, context):
     if not 1 <= len(data["evidence"]) <= 5:
         raise ValueError("Expected one to five supporting passages")
     passages = {}
-    for part in context.split("\n\n---\n\n"):
-        match = re.match(r"\[(\d+)\] [^\n]+\n([\s\S]+)", part)
-        if match:
-            passages[int(match[1])] = match[2]
+    if source_chunks is not None:
+        # Authoritative metadata avoids treating fake source markers in PDF text as citations.
+        passages = {n: chunk["text"] for n, chunk in enumerate(source_chunks, 1)}
+    else:
+        for part in context.split("\n\n---\n\n"):
+            match = re.match(r"\[(\d+)\] [^\n]+\n([\s\S]+)", part)
+            if match:
+                passages[int(match[1])] = match[2]
     lines = []
     for item in data["evidence"]:
         if not isinstance(item, dict) or set(item) != {"source_id", "quote"}:

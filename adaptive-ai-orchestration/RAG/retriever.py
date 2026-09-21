@@ -9,7 +9,10 @@ SIMILARITY_THRESHOLD = float(os.getenv("RAG_SIMILARITY_THRESHOLD", "0.75"))
 MAX_CONTEXT_CHUNKS = 5
 if not -1 <= SIMILARITY_THRESHOLD <= 1:
     raise ValueError("RAG_SIMILARITY_THRESHOLD must be in [-1, 1]")
-def retrieve(query, top_k=5, usage=None, user_id=None):
+def retrieve(query, top_k=5, usage=None, user_id=None, threshold=None):
+    threshold = SIMILARITY_THRESHOLD if threshold is None else threshold
+    if not -1 <= threshold <= 1 or top_k < 1:
+        raise ValueError("Invalid retrieval threshold or top_k")
     permissions = allowed_sources(user_id)
     if permissions == set():
         return dict(context="", chunks=[], found=False)
@@ -26,7 +29,7 @@ def retrieve(query, top_k=5, usage=None, user_id=None):
     results = search_index(embedding["embedding"], top_k, allowed_sources=permissions)
     chunks, parts = [], []
     for chunk in results:
-        if chunk["score"] < SIMILARITY_THRESHOLD or len(chunks) >= MAX_CONTEXT_CHUNKS:
+        if chunk["score"] < threshold or len(chunks) >= MAX_CONTEXT_CHUNKS:
             continue
         part = f"[{len(chunks)+1}] {chunk['source']}, page {chunk['page']}\n{chunk['text']}"
         if len("\n\n---\n\n".join([*parts, part])) > MAX_RAG_CONTEXT_CHARS:

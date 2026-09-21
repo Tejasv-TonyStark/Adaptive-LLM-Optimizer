@@ -3,7 +3,7 @@ import hashlib
 import time
 from database.models import Query, Usage, AuditLog
 from core.orchestrator import orchestrate
-from core.decision_engine import select_best_model, SUITABLE_MODELS
+from core.decision_engine import select_best_model, SUITABLE_MODELS, STATIC_MODELS
 from core.model_health import model_health
 from core.conversation import resolve_query
 from core.config import EVALUATION_SAMPLE_RATE
@@ -33,21 +33,25 @@ def process_query(db, user_id, query, session_id, policy=None, force_model=None,
     scoped = inspect_query(clean, retrieval_needed=routing["retrieval_needed"])
     if not scoped["safe"]:
         raise QueryRejected(scoped["reason"])
-    routing["conversation"] = dict(resolved=resolved, followup=conversation["followup"])
-    usage, sources, context = [], [], None
+    routing["conversation"] = dict(resolved=resolved, followup=conversation["followup"],
+                                    topic=conversation.get("topic", clean))
+    usage, sources, context, source_chunks = [], [], None, []
     selected, decision = force_model, {}
     try:
         if routing["retrieval_needed"] and not conversation["needs_clarification"]:
             retrieved = retrieve(resolved, usage=usage, user_id=user_id)
             context = retrieved["context"] if retrieved["found"] else None
+            source_chunks = retrieved["chunks"]
             sources = [{k: c[k] for k in ("source", "page", "chunk_id", "score")}
                        for c in retrieved["chunks"]]
         strategy = routing["execution_strategy"]
-        if not force_model:
+        no_generation = conversation["needs_clarification"] or (routing["retrieval_needed"] and not context)
+        if not force_model and not no_generation:
             decision = select_best_model(db, routing["complexity"],
                 input_tokens=estimate_tokens(build_prompt(resolved, strategy, context, conversation["history"])),
                 output_tokens=get_output_token_budget(strategy), policy=policy)
             selected = decision["selected_model"]
+        selected = selected or STATIC_MODELS[routing["complexity"]]
         if conversation["needs_clarification"]:
             result = dict(response="Please clarify what you are referring to so I can answer accurately.",
                           model_used="none", latency_ms=0, fallback_used=False, attempts=[], abstained=True)
@@ -59,7 +63,7 @@ def process_query(db, user_id, query, session_id, policy=None, force_model=None,
                 eligible = [force_model]
             result = execute_query(resolved, selected, routing["strategy"], context,
                 retrieval_required=routing["retrieval_needed"], allow_fallback=allow_fallback,
-                eligible_models=eligible, history=conversation["history"])
+                eligible_models=eligible, history=conversation["history"], source_chunks=source_chunks)
         usage.extend(result["attempts"])
         status = "abstained" if result["abstained"] else "completed"
     except Exception as exc:

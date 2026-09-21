@@ -1,0 +1,10 @@
+{
+  "description": "Development cases derived from existing reference_context labels. Independently validate source versions and add held-out cases before tuning for deployment.",
+  "cases": [
+    {"id":"notice", "query":"What is our notice period for resignation?", "supporting_passages":["serve a notice period of one month"]},
+    {"id":"vacation", "query":"Can unused vacation leave be carried forward?", "supporting_passages":["Unspent Vacation Leaves shall not be carried forward"]},
+    {"id":"sick", "query":"How many sick leave days are available?", "supporting_passages":["Sick Leaves of not more than 6 days"]},
+    {"id":"salary", "query":"When is monthly salary paid?", "supporting_passages":["Monthly salary is paid to employees on the first of every month"]},
+    {"id":"missing", "query":"What is our reimbursement policy for teleportation?", "supporting_passages":[], "expect_abstention":true}
+  ]
+}

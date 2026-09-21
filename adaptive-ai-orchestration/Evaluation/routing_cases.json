@@ -1,0 +1,18 @@
+{
+  "version": 1,
+  "description": "Author-created development regressions, including paraphrases and keyword counterexamples. These were used during implementation, so are not held-out evidence of generalization.",
+  "cases": [
+    {"id":"DEV-01","split":"train","category":"general","query":"Prove that 2 is an even number","intent":"general","complexity":"low","retrieval_needed":false},
+    {"id":"DEV-02","split":"train","category":"general","query":"Show that 4 is even","intent":"general","complexity":"low","retrieval_needed":false},
+    {"id":"DEV-03","split":"train","category":"general","query":"Demonstrate that 7 is odd","intent":"general","complexity":"low","retrieval_needed":false},
+    {"id":"DEV-04","split":"train","category":"general","query":"Find the optimal schedule for 100 jobs with precedence constraints","intent":"general","complexity":"high","retrieval_needed":false},
+    {"id":"DEV-05","split":"train","category":"general","query":"An optimal schedule is needed under precedence constraints","intent":"general","complexity":"high","retrieval_needed":false},
+    {"id":"DEV-06","split":"train","category":"general","query":"Investigate a strange intermittent production issue","intent":"general","complexity":"medium","retrieval_needed":false},
+    {"id":"DEV-07","split":"train","category":"general","query":"Optimize this workload","intent":"general","complexity":"medium","retrieval_needed":false},
+    {"id":"DEV-08","split":"train","category":"general","query":"Define distributed computing","intent":"general","complexity":"low","retrieval_needed":false},
+    {"id":"DEV-09","split":"train","category":"general","query":"What is Python and how does it work?","intent":"general","complexity":"medium","retrieval_needed":false},
+    {"id":"DEV-10","split":"train","category":"general","query":"Act as a Python tutor and explain lists","intent":"general","complexity":"medium","retrieval_needed":false},
+    {"id":"DEV-11","split":"train","category":"rag","query":"According to our handbook, how do I claim an allowance?","intent":"specific","complexity":"low","retrieval_needed":true},
+    {"id":"DEV-12","split":"train","category":"rag","query":"What does our contract say about resignation?","intent":"specific","complexity":"low","retrieval_needed":true}
+  ]
+}

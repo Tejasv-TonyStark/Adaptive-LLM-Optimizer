@@ -13,6 +13,7 @@ from database.connection import SessionLocal
 from database.models import Query, Evaluation, Usage
 from Evaluation.Evaluator import evaluate_response
 from Learning.learning import update_model_probabilities
+from Evaluation.calibration import judge_learning_allowed
 
 MAX_ATTEMPTS = 3
 def process_one(session_factory=SessionLocal):
@@ -30,7 +31,9 @@ def process_one(session_factory=SessionLocal):
             return True
         row.evaluation_attempts = (row.evaluation_attempts or 0) + 1
         try:
-            scores = evaluate_response(row.query_text, row.response, row.context)
+            resolved = ((row.routing_details or {}).get("analysis", {}).get("conversation", {})
+                        .get("resolved", row.query_text))
+            scores = evaluate_response(resolved, row.response, row.context)
         except Exception as exc:
             scores = dict(success=False, usage=[], reasoning=type(exc).__name__)
         for item in scores.get("usage", []):
@@ -39,8 +42,12 @@ def process_one(session_factory=SessionLocal):
             db.add(Evaluation(query_id=row.id, **{k: scores[k] for k in (
                 "relevance", "correctness", "completeness", "quality_score", "reasoning",
                 "hallucination_flags", "retrieval_score", "retrieval_warning")}))
-            update_model_probabilities(db, row.model_used, row.complexity,
-                                       scores["quality_score"], row.model_latency_ms)
+            learn = judge_learning_allowed(row.model_used)
+            if learn:
+                update_model_probabilities(db, row.model_used, row.complexity,
+                                           scores["quality_score"], row.model_latency_ms)
+            row.routing_details = {**(row.routing_details or {}), "learning": {
+                "applied": learn, "reason": "calibrated judge" if learn else "judge not independently calibrated for this model"}}
             row.evaluation_status = "completed"
         elif row.evaluation_attempts >= MAX_ATTEMPTS:
             row.evaluation_status = "failed"

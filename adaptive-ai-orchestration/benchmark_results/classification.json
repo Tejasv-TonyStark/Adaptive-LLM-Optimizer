@@ -1,7 +1,7 @@
 {
   "kind": "offline classification; no model quality or cost claims",
   "total": 32,
-  "passed": 31,
+  "passed": 32,
   "results": [
     {
       "id": "GT-01",
@@ -390,10 +390,10 @@
       },
       "actual": {
         "intent": "specific",
-        "complexity": "medium",
+        "complexity": "low",
         "retrieval_needed": true
       },
-      "passed": false
+      "passed": true
     },
     {
       "id": "TRAIN-01",

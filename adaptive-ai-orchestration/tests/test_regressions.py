@@ -4,6 +4,9 @@ os.environ["DATABASE_URL"] = "sqlite://"
 os.environ["JWT_SECRET_KEY"] = "offline-test-secret-that-is-at-least-32-bytes"
 os.environ["EVALUATION_SAMPLE_RATE"] = "1"
 os.environ["ADMIN_USERNAMES"] = ""
+os.environ["JUDGE_CALIBRATION_PATH"] = ""
+os.environ["JUDGE_MODEL"] = "llama3-70b"
+os.environ["RAG_ACCESS_POLICY"] = ""
 import json
 import tempfile
 import unittest
@@ -36,6 +39,8 @@ SCORES = dict(success=True, relevance=.9, correctness=.9, completeness=.9,
               retrieval_score=.8, retrieval_warning=False, usage=[])
 CHUNK = dict(text="Employees have six sick leave days.", source="handbook.pdf",
              page=2, chunk_id="handbook:p2:c0", score=.9)
+RAG_GOOD = {**GOOD, "text": json.dumps({"answerable": True, "evidence": [
+    {"source_id": 1, "quote": CHUNK["text"]}]})}
 
 class PureTests(unittest.TestCase):
     def test_topic_is_not_difficulty(self):
@@ -94,8 +99,8 @@ class PureTests(unittest.TestCase):
         self.assertTrue(inspect_query("What is our company policy on fraud reporting?", True)["safe"])
         self.assertFalse(inspect_query("<script>x</script>", False)["safe"])
     def test_character_estimate_uses_full_prompt(self):
-        with patch("Execution.Execution_layer.invoke_model", return_value={"text":"ok"}):
-            result = execute_query("q", "nova-micro", "rag", context="document"*50, retrieval_required=True)
+        with patch("Execution.Execution_layer.invoke_model", return_value={"text":RAG_GOOD["text"]}):
+            result = execute_query("q", "nova-micro", "rag", context="[1] handbook.pdf, page 2\n"+CHUNK["text"], retrieval_required=True)
         self.assertGreater(result["input_tokens"], 50)
 
 class DatabaseTests(unittest.TestCase):
@@ -174,13 +179,15 @@ class DatabaseTests(unittest.TestCase):
     def test_real_pipeline_with_fixture_retrieval(self):
         with self.factory() as db, patch("core.service.retrieve",return_value=dict(
             context="[1] handbook.pdf, page 2\n"+CHUNK["text"],chunks=[CHUNK],found=True)), patch(
-                "Execution.Execution_layer.invoke_model",return_value=GOOD) as provider:
+                "Execution.Execution_layer.invoke_model",return_value=RAG_GOOD) as provider:
             row=process_query(db,1,"What is our sick leave entitlement?","test-session",evaluation_rate=0)
         prompt=provider.call_args.args[1]
         self.assertIn(CHUNK["text"],prompt)
         self.assertIn("ONLY",prompt)
         self.assertEqual(row.sources[0]["page"],2)
         self.assertEqual(row.evaluation_status,"skipped")
+        self.assertEqual(row.status,"completed")
+        self.assertEqual(row.response, CHUNK["text"]+" [1]")
     def test_api_abstention(self):
         with patch("core.service.retrieve",return_value=dict(context="",chunks=[],found=False)), patch(
                 "Execution.Execution_layer.invoke_model") as provider:
@@ -209,7 +216,8 @@ class DatabaseTests(unittest.TestCase):
         provider.assert_not_called()
     def test_worker_idempotent_and_seed_retained(self):
         row=self.query()
-        with patch("Evaluation.worker.evaluate_response",return_value=SCORES) as judge:
+        with patch("Evaluation.worker.evaluate_response",return_value=SCORES) as judge, patch(
+                "Evaluation.worker.judge_learning_allowed", return_value=True):
             self.assertTrue(process_one(self.factory))
             self.assertFalse(process_one(self.factory))
         judge.assert_called_once()
@@ -234,7 +242,8 @@ class DatabaseTests(unittest.TestCase):
     def test_worker_learning_rollback(self):
         row=self.query()
         with patch("Evaluation.worker.evaluate_response",return_value=SCORES), patch(
-                "Evaluation.worker.update_model_probabilities",side_effect=RuntimeError()):
+                "Evaluation.worker.update_model_probabilities",side_effect=RuntimeError()), patch(
+                "Evaluation.worker.judge_learning_allowed", return_value=True):
             with self.assertRaises(RuntimeError):
                 process_one(self.factory)
         with self.factory() as db:

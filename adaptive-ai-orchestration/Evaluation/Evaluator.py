@@ -2,11 +2,13 @@
 import json
 import math
 import time
+import os
 from pydantic import BaseModel, Field, ConfigDict
 from Execution.Bedrock_client import invoke_model
 from tracking.usage import usage_record
 
-JUDGE_MODEL = "llama3-70b"
+JUDGE_MODEL = os.getenv("JUDGE_MODEL", "llama3-70b")
+JUDGE_RUBRIC_VERSION = "quality-v2"
 class JudgeScores(BaseModel):
     model_config = ConfigDict(extra="forbid", allow_inf_nan=False, strict=True)
     relevance: float = Field(ge=0, le=1)

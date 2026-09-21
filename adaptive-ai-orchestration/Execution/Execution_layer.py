@@ -16,7 +16,7 @@ class ExecutionError(RuntimeError):
 def get_output_token_budget(strategy):
     return OUTPUT_TOKEN_BUDGETS.get(strategy, OUTPUT_TOKEN_BUDGETS["default"])
 def execute_query(query, model, strategy, context=None, retrieval_required=False, allow_fallback=True,
-                  eligible_models=None, history=None):
+                  eligible_models=None, history=None, source_chunks=None):
     if model not in FALLBACK_CHAIN:
         raise ValueError("Unknown model")
     required = retrieval_required or strategy == "rag"
@@ -49,7 +49,7 @@ def execute_query(query, model, strategy, context=None, retrieval_required=False
             response, abstained = result["text"], False
             if required:
                 try:
-                    response, abstained = render_evidence(response, context)
+                    response, abstained = render_evidence(response, context, source_chunks)
                 except (ValueError, TypeError):
                     record.update(status="failed", error="InvalidEvidence")
                     invalid_evidence = True

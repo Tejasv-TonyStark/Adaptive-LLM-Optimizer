@@ -1,4 +1,4 @@
-"""Static baseline and opt-in greedy online-mean router. No Bayesian claims."""
+"""Health-aware routing with capability floors and bounded opt-in exploration."""
 from database.crud import get_probability
 from tracking.usage import calculate_cost
 import random

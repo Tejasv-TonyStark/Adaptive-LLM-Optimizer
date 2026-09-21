@@ -1,5 +1,9 @@
 # Adaptive AI Orchestration System
 
+Current routing safeguards, setup, verification commands and known limitations
+are documented in [HARDENING.md](HARDENING.md). Judge-driven learning now requires
+independent calibration; document answers use verified extractive citations.
+
 An intelligent LLM routing system that automatically selects the best AI model for each query based on complexity, intent, and continuously learned probabilities — built with FastAPI, AWS Bedrock, PostgreSQL, and FAISS.
 
 ---
