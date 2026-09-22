@@ -65,9 +65,10 @@ fictional Sankalpa data source. The chat panel is connected to `POST /api/chat`;
 it is not a mockup. The handbook button uses `GET /api/handbook` and serves only
 the bundled fictional PDF.
 
-Before publishing, replace the clearly labelled GitHub profile, repository, and
-Issues links in `Frontend/index.html`. They are intentionally placeholders here
-because this repository does not contain Tejasv's public URLs.
+The page links to Tejasv's [GitHub profile](https://github.com/Tejasv-TonyStark),
+[project repository](https://github.com/Tejasv-TonyStark/Adaptive-LLM-Optimizer),
+[GitHub Issues](https://github.com/Tejasv-TonyStark/Adaptive-LLM-Optimizer/issues),
+and [LinkedIn profile](https://www.linkedin.com/in/tejasv-guru-prasad/).
 
 ## Deployment notes
 
