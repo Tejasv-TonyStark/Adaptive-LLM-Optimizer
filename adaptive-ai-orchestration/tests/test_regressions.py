@@ -159,17 +159,15 @@ class DatabaseTests(unittest.TestCase):
             db.get(User,1).is_active=False
             db.commit()
         self.assertEqual(self.client.get("/api/auth/me",headers=self.headers).status_code,401)
-    def test_feedback_and_status_ownership(self):
+    def test_feedback_and_status_are_public_in_demo_mode(self):
         row=self.query()
         payload=dict(query_id=row.id,rating=4)
-        self.assertEqual(self.client.post("/api/feedback",headers=self.other_headers,json=payload).status_code,404)
-        self.assertEqual(self.client.get(f"/api/queries/{row.id}/evaluation",headers=self.other_headers).status_code,404)
-        self.assertEqual(self.client.post("/api/feedback",headers=self.headers,json=payload).status_code,200)
+        self.assertEqual(self.client.get(f"/api/queries/{row.id}/evaluation").status_code,200)
+        self.assertEqual(self.client.post("/api/feedback",json=payload).status_code,200)
         self.assertEqual(self.client.post("/api/feedback",headers=self.headers,json=payload).status_code,409)
-    def test_metrics_admin_only(self):
-        self.assertEqual(self.client.get("/api/metrics",headers=self.headers).status_code,403)
-        with patch.dict(os.environ, {"ADMIN_USERNAMES":"owner"}):
-            self.assertEqual(self.client.get("/api/metrics",headers=self.headers).status_code,200)
+    def test_dashboard_metrics_are_public(self):
+        self.assertEqual(self.client.get("/api/metrics").status_code,200)
+        self.assertEqual(self.client.get("/api/probabilities").status_code,200)
     def test_api_contract_and_status_transition(self):
         with patch("Execution.Execution_layer.invoke_model",return_value=GOOD):
             response=self.client.post("/api/chat",headers=self.headers,

@@ -1256,6 +1256,7 @@ let queryCount  = 0;
 let isLoading   = false;
 let authToken   = sessionStorage.getItem(TOKEN_KEY) || "";
 let currentUser = null;
+const PUBLIC_DEMO_MODE = true;
 
 const MODEL_DISPLAY = {
   "nova-micro": { label: "Nova Micro",     cls: "tag-nova"    },
@@ -1424,6 +1425,12 @@ async function registerUser(event) {
 }
 
 async function loadCurrentUser() {
+  if (PUBLIC_DEMO_MODE) {
+    document.getElementById("auth-screen").style.display = "none";
+    document.getElementById("user-badge").textContent = "Interview demo";
+    document.getElementById("logout-btn").style.display = "none";
+    return;
+  }
   if (!authToken) { setLoggedOut(); return; }
 
   try {
@@ -1467,7 +1474,7 @@ function logoutUser() {
 async function sendQuery() {
   const text = textarea.value.trim();
   if (!text || isLoading) return;
-  if (!authToken) { setLoggedOut(); return; }
+  if (!authToken && !PUBLIC_DEMO_MODE) { setLoggedOut(); return; }
 
   isLoading = true;
   queryCount++;
@@ -1496,10 +1503,7 @@ async function sendQuery() {
   try {
     const data = await requestJson("/api/chat", {
       method:  "POST",
-      headers: {
-        "Content-Type": "application/json",
-        "Authorization": `Bearer ${requestToken}`
-      },
+      headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ query: text, session_id: SESSION })
     });
 

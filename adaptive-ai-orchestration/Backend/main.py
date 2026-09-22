@@ -94,11 +94,11 @@ def get_me(user=Depends(current_user)):
 
 @app.post("/api/chat", response_model=ChatResponse)
 @limiter.limit("10/minute")
-def chat(request: Request, body: ChatRequest, db: Session=Depends(get_db), user=Depends(current_user)):
+def chat(request: Request, body: ChatRequest, db: Session=Depends(get_db)):
     try:
-        row = process_query(db, user.id, body.query, body.session_id)
+        row = process_query(db, None, body.query, body.session_id)
     except QueryRejected as exc:
-        db.add(AuditLog(event_type="blocked", api_key=str(user.id), detail={"reason": str(exc)}))
+        db.add(AuditLog(event_type="blocked", api_key="public-demo", detail={"reason": str(exc)}))
         db.commit()
         raise HTTPException(400, str(exc))
     except PipelineUnavailable as exc:
@@ -109,23 +109,23 @@ def chat(request: Request, body: ChatRequest, db: Session=Depends(get_db), user=
         abstained=row.status == "abstained", evaluation_status=row.evaluation_status,
         sources=row.sources, routing_reasons=row.routing_details["analysis"]["routing_reasons"])
 
-def owned_query(db, query_id, user_id):
-    row = db.query(Query).filter_by(id=query_id, user_id=user_id).first()
+def owned_query(db, query_id):
+    row = db.get(Query, query_id)
     if row is None:
         raise HTTPException(404, "Query not found.")
     return row
 
 @app.get("/api/queries/{query_id}/evaluation", response_model=EvaluationResponse)
-def evaluation_status(query_id: int, db: Session=Depends(get_db), user=Depends(current_user)):
-    row = owned_query(db, query_id, user.id)
+def evaluation_status(query_id: int, db: Session=Depends(get_db)):
+    row = owned_query(db, query_id)
     evaluation = db.query(Evaluation).filter_by(query_id=row.id).first()
     return EvaluationResponse(query_id=row.id, status=row.evaluation_status,
         quality_score=evaluation.quality_score if evaluation else None,
         reasoning=evaluation.reasoning if evaluation else None)
 
 @app.post("/api/feedback", response_model=FeedbackResponse)
-def submit_feedback(body: FeedbackRequest, db: Session=Depends(get_db), user=Depends(current_user)):
-    owned_query(db, body.query_id, user.id)
+def submit_feedback(body: FeedbackRequest, db: Session=Depends(get_db)):
+    owned_query(db, body.query_id)
     if db.query(Feedback).filter_by(query_id=body.query_id).first():
         raise HTTPException(409, "Feedback already submitted.")
     db.add(Feedback(**body.model_dump()))
@@ -137,7 +137,7 @@ def submit_feedback(body: FeedbackRequest, db: Session=Depends(get_db), user=Dep
     return FeedbackResponse(success=True, message="Feedback saved for human evaluation; it does not train the router.")
 
 @app.get("/api/metrics", response_model=MetricsResponse)
-def get_metrics(db: Session=Depends(get_db), user=Depends(admin_user)):
+def get_metrics(db: Session=Depends(get_db)):
     rows = db.query(Query).filter(Query.status.in_(["completed", "abstained"]))
     total = rows.count()
     latency = rows.with_entities(func.avg(Query.latency_ms)).scalar() or 0
@@ -151,7 +151,7 @@ def get_metrics(db: Session=Depends(get_db), user=Depends(admin_user)):
         unknown_cost_attempts=db.query(Usage).filter(Usage.estimated_cost.is_(None)).count())
 
 @app.get("/api/probabilities", response_model=list[ProbabilityResponse])
-def get_probabilities(db: Session=Depends(get_db), user=Depends(admin_user)):
+def get_probabilities(db: Session=Depends(get_db)):
     return [ProbabilityResponse(model=p.model, complexity=p.complexity, p_quality=p.p_quality,
         p_latency=p.p_latency, p_cost=p.p_cost, sample_count=p.sample_count) for p in db.query(Probability).all()]
 

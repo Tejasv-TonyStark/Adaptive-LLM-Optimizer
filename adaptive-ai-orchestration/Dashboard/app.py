@@ -1,4 +1,4 @@
-"""Admin-only dashboard through the API; no direct database credentials."""
+"""Public local dashboard through the API; no direct database credentials."""
 import os
 import httpx
 import pandas as pd
@@ -6,35 +6,14 @@ import streamlit as st
 API = os.getenv("API_BASE_URL", "http://127.0.0.1:8000")
 st.set_page_config(page_title="LLM Router Metrics", layout="wide")
 st.title("LLM Router Metrics")
-st.caption("Administrative aggregates. Evaluation quality reflects sampled, judged answers.")
-if "token" not in st.session_state:
-    with st.form("login"):
-        username = st.text_input("Username")
-        password = st.text_input("Password", type="password")
-        submit = st.form_submit_button("Sign in")
-    if submit:
-        try:
-            response = httpx.post(API+"/api/auth/login", json=dict(username=username,password=password), timeout=10)
-            response.raise_for_status()
-            st.session_state.token = response.json()["access_token"]
-            st.rerun()
-        except httpx.HTTPError:
-            st.error("Sign-in failed. Check credentials and API availability.")
-    st.stop()
-if st.sidebar.button("Sign out"):
-    del st.session_state.token
-    st.rerun()
+st.caption("Live aggregate metrics. Evaluation quality reflects judged answers.")
 @st.fragment(run_every="10s")
 def metrics_panel():
-    headers = {"Authorization": "Bearer "+st.session_state.token}
     try:
-        response = httpx.get(API+"/api/metrics", headers=headers, timeout=10)
-        if response.status_code in (401,403):
-            st.error("An active administrator account is required. Configure ADMIN_USERNAMES on the API.")
-            return
+        response = httpx.get(API+"/api/metrics", timeout=10)
         response.raise_for_status()
         metrics = response.json()
-        probs = httpx.get(API+"/api/probabilities", headers=headers, timeout=10)
+        probs = httpx.get(API+"/api/probabilities", timeout=10)
         probs.raise_for_status()
     except httpx.HTTPError:
         st.error("Metrics unavailable.")

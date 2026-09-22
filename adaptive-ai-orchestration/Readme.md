@@ -1,305 +1,99 @@
-# Adaptive AI Orchestration System
+# Adaptive AI Orchestration - Interview Demo
 
-Current routing safeguards, setup, verification commands and known limitations
-are documented in [HARDENING.md](HARDENING.md). Judge-driven learning now requires
-independent calibration; document answers use verified extractive citations.
+A local public demonstration of LLM routing and retrieval-augmented generation (RAG). It uses AWS Bedrock and a fictional Sankalpa employee handbook. It is an explainable prototype, not a production deployment.
 
-An intelligent LLM routing system that automatically selects the best AI model for each query based on complexity, intent, and continuously learned probabilities — built with FastAPI, AWS Bedrock, PostgreSQL, and FAISS.
+## What it demonstrates
 
----
+- General questions use a direct LLM route.
+- Sankalpa and handbook questions activate RAG.
+- RAG creates Titan embeddings, retrieves from FAISS, reranks candidates, and keeps adjacent PDF chunks together.
+- Answers are grounded in verified retrieved text. If model evidence cannot be verified, the app returns an exact relevant source sentence instead of inventing an answer.
+- Routing cards show strategy, selected model, latency, sources, and evaluation status.
 
-## What This System Does
-
-Instead of sending every query to one model, this system analyzes each query and routes it to the most appropriate model:
-
-- **Simple questions** → Nova Micro (fast, cheap)
-- **Reasoning questions** → Llama 3.1 8B (balanced)
-- **Complex analysis** → Llama 3.3 70B (powerful)
-- **Document questions** → RAG pipeline (retrieves from company PDFs first)
-
-After every response, an LLM judge evaluates quality and a Bayesian learning engine updates routing probabilities — so the system improves with every query.
-
----
+The handbook is fictional. Do not add confidential documents to this public-demo configuration.
 
 ## Architecture
 
-```
-User Query (HTML Frontend)
-         │
-         ▼
-  Security Guard           ← injection detection, sanitization, RAG guardrails
-         │
-         ▼
-    Orchestrator            ← intent detection + complexity analysis
-         │
-         ▼
-  Decision Engine           ← Bayesian probability routing
-         │
-    ┌────┴────┐
-    │         │
-  [RAG]   [Direct]         ← FAISS retrieval if company docs needed
-    │         │
-    └────┬────┘
-         │
-         ▼
-  AWS Bedrock LLM           ← Nova Micro / Llama 3.1 8B / Llama 3.3 70B
-         │
-         ▼
-   Response → User          ← immediate
-         │
-    (background)
-         │
-         ▼
-  LLM Judge Evaluation      ← relevance + correctness + completeness + hallucination check
-         │
-         ▼
-  Bayesian Learning Engine  ← updates p_quality + p_latency in DB
+```text
+Browser UI -> FastAPI -> validation and routing -> direct LLM or RAG
+RAG -> Titan embeddings -> FAISS retrieval -> reranking -> cited response
+Streamlit dashboard -> aggregate metrics API
+Evaluation worker -> optional model-answer quality scoring
 ```
 
----
+## RAG document
 
-## Tech Stack
-
-| Layer | Technology |
-|---|---|
-| Backend API | FastAPI + Uvicorn |
-| Database | PostgreSQL on Supabase via SQLAlchemy |
-| AI Models | AWS Bedrock (us-east-1) |
-| Vector DB | FAISS |
-| Embeddings | Amazon Titan Text V2 |
-| RAG | FAISS + cosine similarity |
-| Security | bcrypt, JWT, SHA-256, CORS lockdown |
-| Dashboard | Streamlit + Plotly |
-| Frontend | HTML/CSS/JS |
-| Language | Python 3.13 |
-
----
-
-## Models
-
-| Internal Name | Bedrock Model ID | Role |
-|---|---|---|
-| `nova-micro` | `amazon.nova-micro-v1:0` | Fast, low complexity |
-| `llama3-8b` | `us.meta.llama3-1-8b-instruct-v1:0` | Reasoning, medium |
-| `haiku` | `us.meta.llama3-3-70b-instruct-v1:0` | Complex + LLM judge |
-
----
-
-## Project Structure
-
-```
-adaptive-ai-orchestration/
-├── Backend/
-│   ├── main.py              # FastAPI app — 8 endpoints
-│   ├── schemas.py           # Pydantic request/response models
-│   └── dependencies.py      # API key verification + rate limiter
-├── auth/
-│   └── auth_handler.py      # JWT creation, bcrypt password hashing
-├── core/
-│   ├── orchestrator.py      # Master routing pipeline
-│   ├── intent_detector.py   # General vs company-specific classification
-│   ├── complexity_analyzer.py # Low/medium/high classification
-│   └── decision_engine.py   # Bayesian probability-based model selection
-├── database/
-│   ├── models.py            # SQLAlchemy table definitions (6 tables)
-│   ├── crud.py              # All DB read/write operations
-│   ├── connection.py        # PostgreSQL connection
-│   ├── seed.py              # Initial probability values
-│   └── init_db.py           # Table creation
-├── Execution/
-│   ├── Bedrock_client.py    # AWS Bedrock API calls
-│   ├── Execution_layer.py   # Model execution + fallback chain
-│   └── prompt_builder.py    # Token-efficient prompt templates
-├── RAG/
-│   ├── document_loader.py   # PDF ingestion
-│   ├── embedder.py          # Titan V2 embeddings
-│   ├── vector_store.py      # FAISS index management
-│   └── retriever.py         # Similarity search + threshold filtering
-├── Evaluation/
-│   ├── Evaluator.py         # LLM-as-judge scoring
-│   └── golden_tests.py      # 12 real Q&A tests from company handbook
-├── Learning/
-│   └── learning_engine.py   # Bayesian p_quality + p_latency updater
-├── security/
-│   └── security_guard.py    # Prompt injection + input sanitization
-├── tracking/
-│   └── metrics_tracker.py   # Aggregated performance metrics
-├── Dashboard/
-│   └── app.py               # Streamlit dashboard
-├── Frontend/
-│   ├── index.html           # Chat UI with login page
-│   └── logo.png             # Info Services logo
-├── tests/
-│   └── test_suite.py        # Unit tests for all modules
-├── documents/               # Company PDFs for RAG
-├── faiss_index/             # FAISS index files
-├── .env                     # Environment variables
-└── requirements.txt
-```
-
----
+The active corpus is `documents/sankalpa_employee_handbook_realistic_simulation.pdf`. Rebuild the FAISS index after adding or replacing a PDF.
 
 ## Setup
 
-### 1. Clone and install dependencies
-
-```bash
-git clone <repo>
-cd adaptive-ai-orchestration
+```powershell
 python -m venv venv
-source venv/Scripts/activate   # Windows
+.\venv\Scripts\activate
 pip install -r requirements.txt
+.\venv\Scripts\python.exe -m database.init_db
+.\venv\Scripts\python.exe -m database.seed
+.\venv\Scripts\python.exe -m RAG.vector_store
 ```
 
-### 2. Configure `.env`
+Configure PostgreSQL and AWS Bedrock credentials in `.env`; see `.env.example`.
 
-```env
-DATABASE_URL=postgresql://...
-JWT_SECRET_KEY=your-secret-key-here
-API_KEY_HASHES=sha256-hash-of-your-api-key
-AWS_REGION=us-east-1
-AWS_ACCESS_KEY_ID=your-key
-AWS_SECRET_ACCESS_KEY=your-secret
+## Run
+
+```powershell
+# API and chat UI
+.\venv\Scripts\python.exe -m Backend.main
+
+# Dashboard
+.\venv\Scripts\python.exe -m streamlit run Dashboard/app.py
+
+# Optional quality-evaluation worker
+.\venv\Scripts\python.exe -m Evaluation.worker
 ```
 
-### 3. Create database tables
+- Chat: `http://127.0.0.1:8000`
+- API docs: `http://127.0.0.1:8000/docs`
+- Dashboard: `http://127.0.0.1:8501`
 
-```bash
-python -m database.init_db
+This is public-demo mode: chat, feedback, evaluation status, and dashboard metrics do not require sign-in. Keep it local or behind a trusted network boundary because requests can incur AWS usage charges.
+
+## Demo questions
+
+- `What are the Sankalpa standard working hours?`
+- `What is the Sankalpa remote work policy?`
+- `How does Sankalpa travel reimbursement work?`
+- `What is the Sankalpa resignation notice period?`
+- `Explain Python lists.`
+
+## Routing and evaluation
+
+Intent and complexity are transparent rule-based heuristics, not a trained classifier. Sankalpa/handbook questions route to RAG; simple policy lookups are normally low complexity, while explain, compare, and summarize tasks are normally medium complexity.
+
+Set `EVALUATION_SAMPLE_RATE=1.0` if every normal model answer should receive an LLM judge score, and run `Evaluation.worker` to process pending work. Retrieval-only responses are excluded from model-quality scoring because they are source extracts rather than model-generated answers.
+
+## Safety controls
+
+- Query limits, basic sanitization, and rate limiting
+- Prompt-injection and credential-request screening
+- Restricted CORS origins
+- Exact-source citation validation for RAG
+- No raw HTML rendering of model output
+
+These controls reduce risk but do not guarantee prevention of all prompt-injection or retrieval-relevance failures.
+
+## Limitations
+
+- RAG relevance is improved by hybrid reranking and adjacent chunks but is not guaranteed.
+- The extractive fallback uses lexical matching, not a semantic reranker.
+- Reindexing embeds the full corpus; it is not incremental.
+- LLM judge scores are not independent human ground truth.
+- The dashboard and API are intentionally unauthenticated for this demo.
+
+For production, add authentication and document ACLs, incremental indexing, a learned/cross-encoder reranker, human-labeled evaluation, and operational controls.
+
+## Tests
+
+```powershell
+.\venv\Scripts\python.exe -m unittest tests.test_regressions tests.test_hardening -q
+node --test tests/frontend.test.cjs
 ```
-
-### 4. Seed probability table
-
-```bash
-python -m database.seed
-```
-
-### 5. Load company documents into RAG
-
-```bash
-python -m RAG.document_loader
-```
-
----
-
-## Running the System
-
-Open 3 terminals simultaneously:
-
-```bash
-# Terminal 1 — FastAPI backend
-python -m Backend.main
-
-# Terminal 2 — Streamlit dashboard
-python -m streamlit run Dashboard/app.py
-
-# Terminal 3 — open Frontend/index.html in browser
-```
-
-- **Chat UI:** `Frontend/index.html` (open directly in browser)
-- **API Docs:** `http://localhost:8000/docs`
-- **Dashboard:** `http://localhost:8501`
-
----
-
-## API Endpoints
-
-| Method | Endpoint | Auth | Description |
-|---|---|---|---|
-| GET | `/api/health` | Public | System health check |
-| POST | `/api/auth/register` | Public | Register new user |
-| POST | `/api/auth/login` | Public | Login, returns JWT token |
-| GET | `/api/auth/me` | JWT | Get current user info |
-| POST | `/api/chat` | JWT | Send query, get AI response |
-| POST | `/api/feedback` | JWT | Submit rating (1-5 stars) |
-| GET | `/api/metrics` | JWT | System performance stats |
-| GET | `/api/probabilities` | JWT | Current routing probability table |
-
----
-
-## Security Features
-
-| Feature | Implementation |
-|---|---|
-| Authentication | JWT tokens (24hr expiry) |
-| Password storage | bcrypt hashing |
-| API key storage | SHA-256 hash in `.env` |
-| Input sanitization | XSS, SQL injection, null byte removal |
-| Prompt injection | 30+ regex patterns |
-| RAG guardrails | Blocks harmful/out-of-scope queries |
-| Rate limiting | 10 requests/minute per IP |
-| CORS | Locked to known origins only |
-| Audit logging | Every request logged to DB |
-
----
-
-## Routing Logic
-
-The decision engine selects models using a combined probability score:
-
-```
-score = p_quality × p_latency × p_cost
-```
-
-After each query, the Bayesian learning engine updates `p_quality` and `p_latency`:
-
-```
-alpha = 1 / (1 + sample_count)   ← decreases as more data collected
-new_p = (1 - alpha) × old_p + alpha × observed_value
-```
-
-This means the system learns from real usage — models that perform well get routed more traffic.
-
----
-
-## Evaluation Pipeline
-
-Every response is evaluated in the background by an LLM judge (Llama 3.3 70B):
-
-```
-quality_score = 0.40 × correctness + 0.35 × relevance + 0.25 × completeness
-             - 0.05 × hallucination_count (max penalty 0.20)
-```
-
----
-
-## Running Tests
-
-```bash
-# Unit tests (all modules)
-python -m tests.test_suite
-
-# Security guard only
-python -m Security.Security_Guard
-
-# RAG golden tests (12 real Q&A from company handbook)
-python -m Evaluation.golden_tests
-
-# Complexity routing
-python -m core.complexity_analyzer
-
-# Orchestrator end-to-end
-python -m core.orchestrator
-```
-
----
-
-## Dashboard Features
-
-- Live routing decisions table
-- Queries per model (bar chart)
-- Complexity breakdown (pie chart)
-- Average quality per model
-- Average latency per model
-- Quality score over time (trend line)
-- Strategy usage breakdown
-- Probability routing table (colour-coded)
-- Auto-refresh every 10 seconds
-
----
-
-## Built By
-
-**P V G P Tejasv**
-AI Engineering Intern — Infoservices Digitech India Private Limited
-B.Tech CSE (AI) — Amrita Vishwa Vidyapeetham

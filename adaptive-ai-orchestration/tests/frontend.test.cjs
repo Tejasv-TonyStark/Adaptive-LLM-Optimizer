@@ -111,7 +111,7 @@ test('pending evaluation updates without missing helper errors',async()=>{
   const p=page(r=>r({...good,evaluation_status:'pending'}));await p.sandbox.sendQuery();
   await new Promise(resolve=>setImmediate(resolve));assert.match(p.cards(),/0.90/);
 });
-test('login runs through account loading',async()=>{
+test('public demo bypasses account loading',async()=>{
   const p=page(r=>r(good));await p.sandbox.loginUser({preventDefault(){}});
-  assert.equal(p.elements.get('user-badge').textContent,'tester');assert.equal(p.elements.get('login-submit').disabled,false);
+  assert.equal(p.elements.get('user-badge').textContent,'Interview demo');assert.equal(p.elements.get('login-submit').disabled,false);
 });
