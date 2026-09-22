@@ -6,7 +6,8 @@ DOCUMENT = ("our handbook", "employee handbook", "company handbook", "our policy
             "our contract", "our guidelines", "company policy", "hr policy",
             "according to our", "as per our", "as per the policy",
             "according to the policy", "uploaded document", "uploaded documents")
-ORG = ("our", "my", "this company", "the company", "here", "infoservices", "info services")
+ORG = ("our", "my", "this company", "the company", "here", "sankalpa", "infoservices", "info services")
+NAMED_ORG = ("sankalpa",)
 HR = ("leave", "salary", "benefits", "allowance", "reimbursement", "resignation",
       "notice period", "policy", "policies", "contract", "handbook", "probation",
       "onboarding", "offboarding", "appraisal", "working hours", "work from home",
@@ -23,6 +24,11 @@ def detect_intent(query: str) -> dict:
     general = next((p for p in GENERAL if contains(text, p)), None)
     if general:
         return dict(intent="general", confidence=0.9, reason=f"general qualifier: {general}")
+    # A named organization is an explicit request about the deployment-owned
+    # corpus, even when the user asks for an overview rather than an HR topic.
+    named_org = next((p for p in NAMED_ORG if contains(text, p)), None)
+    if named_org:
+        return dict(intent="specific", confidence=0.9, reason=f"organization reference: {named_org}")
     if any(contains(text, p) for p in ORG) and any(contains(text, p) for p in HR):
         return dict(intent="specific", confidence=0.85, reason="organization marker and policy topic")
     if any(contains(text, p) for p in DIRECT_HR):

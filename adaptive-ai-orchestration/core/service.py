@@ -1,6 +1,7 @@
 """One request pipeline shared by the API and the benchmark runner."""
 import hashlib
 import time
+from sqlalchemy.exc import SQLAlchemyError
 from database.models import Query, Usage, AuditLog
 from core.orchestrator import orchestrate
 from core.decision_engine import select_best_model, SUITABLE_MODELS, STATIC_MODELS
@@ -66,6 +67,11 @@ def process_query(db, user_id, query, session_id, policy=None, force_model=None,
                 eligible_models=eligible, history=conversation["history"], source_chunks=source_chunks)
         usage.extend(result["attempts"])
         status = "abstained" if result["abstained"] else "completed"
+    except SQLAlchemyError:
+        # A failed SQL statement aborts PostgreSQL's transaction. Do not try to
+        # write an error record into it; the API returns a structured 503.
+        db.rollback()
+        raise
     except Exception as exc:
         if isinstance(exc, ExecutionError):
             usage.extend(exc.attempts)
@@ -96,7 +102,9 @@ def process_query(db, user_id, query, session_id, policy=None, force_model=None,
     db.flush()
     rate = EVALUATION_SAMPLE_RATE if evaluation_rate is None else evaluation_rate
     sample = int(hashlib.sha256(str(row.id).encode()).hexdigest()[:8], 16) / 2**32
-    if status == "completed" and sample < rate:
+    # Extractive fallback is grounded retrieval, not a model output. Do not
+    # send it through the model-quality judge or use it for model learning.
+    if status == "completed" and result["model_used"] != "extractive-rag" and sample < rate:
         row.evaluation_status = "pending"
     db.add_all([Usage(query_id=row.id, **item) for item in usage])
     db.add(AuditLog(event_type="request", api_key=str(user_id), detail={

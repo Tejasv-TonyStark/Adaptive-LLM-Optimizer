@@ -51,6 +51,9 @@ class PureTests(unittest.TestCase):
             self.assertEqual(detect_intent(query)["intent"], "general")
     def test_policy_retrieval(self):
         self.assertTrue(orchestrate("What is our sick leave entitlement?")["retrieval_needed"])
+        self.assertTrue(orchestrate("What is Sankalpa's remote work policy?")["retrieval_needed"])
+        self.assertTrue(orchestrate("Explain about our company Sankalpa")["retrieval_needed"])
+        self.assertFalse(orchestrate("In general, explain Sankalpa as a word")["retrieval_needed"])
         self.assertFalse(orchestrate("Explain notice period in general")["retrieval_needed"])
     def test_same_utility_independent_of_sample_count(self):
         self.assertEqual(score_model(.5,.8,.4,"low",0), score_model(.5,.8,.4,"low",50))
@@ -76,6 +79,12 @@ class PureTests(unittest.TestCase):
             with self.assertRaises(ExecutionError) as error:
                 execute_query("Python?", "nova-micro", "fast")
         self.assertIsNotNone(error.exception.attempts[0]["estimated_cost"])
+    def test_general_answers_have_a_hard_display_limit(self):
+        long_answer = "word " * 200
+        with patch("Execution.Execution_layer.invoke_model", return_value={**GOOD, "text": long_answer}):
+            result = execute_query("Explain Python", "nova-micro", "fast")
+        self.assertLessEqual(len(result["response"]), 600)
+        self.assertTrue(result["response"].endswith("…"))
     def test_json_strings_and_bad_output(self):
         self.assertEqual(extract_json('prefix {"reasoning":"a } brace"} suffix'), {"reasoning": "a } brace"})
         self.assertIsNone(extract_json("not JSON"))
@@ -290,7 +299,8 @@ class RetrievalTests(unittest.TestCase):
         with patch("RAG.retriever.get_embedding_result",return_value=dict(
             embedding=[1.0]*1024,input_tokens=5,output_tokens=0,text="")), patch(
             "RAG.retriever.search_index",return_value=[{**CHUNK,"score":.5}]):
-            result=retrieve("our policy",usage=records)
+            # A deployment may still select a stricter cutoff explicitly.
+            result=retrieve("our policy",usage=records,threshold=.75)
         self.assertFalse(result["found"])
         self.assertEqual(records[0]["stage"],"embedding")
         self.assertGreater(records[0]["estimated_cost"],0)

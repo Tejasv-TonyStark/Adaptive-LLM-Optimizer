@@ -1,20 +1,22 @@
 from contextlib import asynccontextmanager
 import os
+import logging
 from fastapi import FastAPI, Depends, Request, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
+from fastapi.responses import JSONResponse
 from pathlib import Path
 from slowapi.errors import RateLimitExceeded
 from slowapi import _rate_limit_exceeded_handler
-from sqlalchemy import func, text
-from sqlalchemy.exc import IntegrityError
+from sqlalchemy import func, text, select
+from sqlalchemy.exc import IntegrityError, SQLAlchemyError
 from sqlalchemy.orm import Session
 from Backend.schemas import (
     ChatRequest, ChatResponse, FeedbackRequest, FeedbackResponse, HealthResponse,
     MetricsResponse, ProbabilityResponse, RegisterRequest, LoginRequest,
     TokenResponse, UserResponse, EvaluationResponse)
 from Backend.dependencies import limiter, current_user, admin_user
-from database.connection import get_db
+from database.connection import get_db, Base
 from database.models import Query, Evaluation, Probability, Feedback, Usage, AuditLog
 from auth.auth_handler import verify_password, create_token, signing_key
 from auth import user_store
@@ -28,6 +30,23 @@ async def lifespan(app):
 app = FastAPI(title="Adaptive LLM Router", version="3.0.0", lifespan=lifespan)
 app.state.limiter = limiter
 app.add_exception_handler(RateLimitExceeded, _rate_limit_exceeded_handler)
+
+@app.middleware("http")
+async def fresh_frontend(request: Request, call_next):
+    response = await call_next(request)
+    if response.headers.get("content-type", "").startswith("text/html"):
+        response.headers["Cache-Control"] = "no-store"
+    return response
+
+@app.exception_handler(SQLAlchemyError)
+async def database_error(request: Request, exc: SQLAlchemyError):
+    logging.getLogger(__name__).error("Database request failed: %s", type(exc).__name__)
+    return JSONResponse(status_code=503, content={"detail": "Database operation failed. Check the database connection and schema migration."})
+
+@app.exception_handler(Exception)
+async def unexpected_error(request: Request, exc: Exception):
+    logging.getLogger(__name__).error("Unhandled request error: %s", type(exc).__name__)
+    return JSONResponse(status_code=500, content={"detail": "An internal server error occurred. Check the backend logs and retry."})
 origins = [x.strip() for x in os.getenv("ALLOWED_ORIGINS", "http://localhost:8000,http://127.0.0.1:8000").split(",")]
 app.add_middleware(CORSMiddleware, allow_origins=origins, allow_credentials=False,
                    allow_methods=["GET", "POST"], allow_headers=["Content-Type", "Authorization"])
@@ -36,9 +55,13 @@ app.add_middleware(CORSMiddleware, allow_origins=origins, allow_credentials=Fals
 def health_check(db: Session=Depends(get_db)):
     try:
         db.execute(text("SELECT 1"))
+        # Validate required tables and columns, not just database connectivity.
+        for table in Base.metadata.sorted_tables:
+            db.execute(select(table).limit(0))
     except Exception:
-        raise HTTPException(503, "Database unavailable.")
-    return HealthResponse(status="ok", database="connected", message="API and database reachable")
+        db.rollback()
+        raise HTTPException(503, "Database unavailable or schema out of date. Run python -m database.init_db.")
+    return HealthResponse(status="ok", database="connected", message="API, database and required schema ready")
 
 @app.post("/api/auth/register", response_model=UserResponse, status_code=201)
 @limiter.limit("5/minute")

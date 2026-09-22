@@ -1260,7 +1260,8 @@ let currentUser = null;
 const MODEL_DISPLAY = {
   "nova-micro": { label: "Nova Micro",     cls: "tag-nova"    },
   "llama3-8b":  { label: "Llama 3.1 8B",  cls: "tag-llama8"  },
-  "haiku":      { label: "Llama 3.3 70B",  cls: "tag-llama70" },
+  "llama3-70b": { label: "Llama 3.3 70B",  cls: "tag-llama70" },
+  "extractive-rag": { label: "Verified retrieval", cls: "tag-default" },
 };
 
 /* ═══════════════════════════════════════════════
@@ -1334,13 +1335,35 @@ function showAuthForm(mode) {
    AUTH REQUESTS
    ═══════════════════════════════════════════════ */
 async function authRequest(path, payload) {
-  const res = await fetch(`${API_BASE}${path}`, {
+  return requestJson(path, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify(payload)
   });
-  const data = await res.json().catch(() => ({}));
-  if (!res.ok) throw new Error(data.detail || `Request failed (${res.status})`);
+}
+
+async function requestJson(path, options = {}) {
+  let res;
+  try {
+    res = await fetch(`${API_BASE}${path}`, options);
+  } catch {
+    throw new Error("Cannot connect to the backend. Check your connection and try again.");
+  }
+  let data;
+  try { data = await res.json(); } catch { /* Handle non-JSON error pages below. */ }
+  if (!res.ok) {
+    const detail = data?.detail;
+    const message = typeof detail === "string" ? detail
+      : typeof detail?.message === "string" ? detail.message
+      : Array.isArray(detail) ? "Please check the input fields and their length."
+      : `The server could not complete the request (HTTP ${res.status}). Please try again.`;
+    const error = new Error(message);
+    error.status = res.status;
+    throw error;
+  }
+  if (!data || typeof data !== "object" || Array.isArray(data)) {
+    throw new Error("The server returned an invalid response. Please try again.");
+  }
   return data;
 }
 
@@ -1357,6 +1380,9 @@ async function loginUser(event) {
       username: document.getElementById("login-username").value.trim(),
       password: document.getElementById("login-password").value
     });
+    if (typeof data.access_token !== "string" || !data.access_token) {
+      throw new Error("The sign-in response was incomplete. Please try again.");
+    }
     authToken = data.access_token;
     sessionStorage.setItem(TOKEN_KEY, authToken);
     await loadCurrentUser();
@@ -1401,18 +1427,20 @@ async function loadCurrentUser() {
   if (!authToken) { setLoggedOut(); return; }
 
   try {
-    const res = await fetch(`${API_BASE}/api/auth/me`, {
+    currentUser = await requestJson("/api/auth/me", {
       headers: { "Authorization": `Bearer ${authToken}` }
     });
-    if (!res.ok) throw new Error("Session expired");
-    currentUser = await res.json();
+    if (typeof currentUser.username !== "string") throw new Error("Invalid account response");
     document.getElementById("auth-screen").style.display = "none";
     document.getElementById("user-badge").textContent = currentUser.username;
     document.getElementById("logout-btn").style.display = "inline-flex";
-  } catch {
-    sessionStorage.removeItem(TOKEN_KEY);
-    authToken = "";
+  } catch (error) {
+    if (error.status === 401 || error.status === 403) {
+      sessionStorage.removeItem(TOKEN_KEY);
+      authToken = "";
+    }
     setLoggedOut();
+    document.getElementById("auth-error").textContent = error.message;
   }
 }
 
@@ -1462,41 +1490,83 @@ async function sendQuery() {
 
   const typingId = "typing-" + qNum;
   appendTyping(typingId);
+  const requestToken = authToken;
+  let answerReceived = false;
 
   try {
-    const res = await fetch(`${API_BASE}/api/chat`, {
+    const data = await requestJson("/api/chat", {
       method:  "POST",
       headers: {
         "Content-Type": "application/json",
-        "Authorization": `Bearer ${authToken}`
+        "Authorization": `Bearer ${requestToken}`
       },
       body: JSON.stringify({ query: text, session_id: SESSION })
     });
 
-    const data = await res.json();
-    if (!res.ok) {
-      if (res.status === 401) logoutUser();
-      const detail = typeof data.detail === "string" ? data.detail : data.detail?.message;
-      throw new Error(detail || (Array.isArray(data.detail) ? "Please check the input length." : `API error ${res.status}`));
+    if (authToken !== requestToken) return;
+    if (typeof data.response !== "string" || !data.response.trim()) {
+      throw new Error("The server returned no answer. Please try again.");
     }
 
     removeTyping(typingId);
     appendMessage("ai", data.response);
+    answerReceived = true;
     addRoutingCard(qNum, text, data);
 
   } catch (err) {
+    if (authToken !== requestToken) return;
+    if (err.status === 401) {
+      logoutUser();
+      document.getElementById("auth-error").textContent = "Your session expired. Please sign in again.";
+    } else if (answerReceived) {
+      console.error("Could not display routing details", err);
+      addErrorCard(qNum, "Answer received", "Routing details unavailable. Your answer is shown in the chat.");
+    } else {
+      appendMessage("ai", `⚠️ ${err.message}`);
+      addErrorCard(qNum, "Request failed", err.message);
+    }
+  } finally {
     removeTyping(typingId);
-    appendMessage("ai", `⚠️ ${err.message}. Make sure the FastAPI server is running at ${API_BASE}`);
-    addErrorCard(qNum);
+    btn.disabled = false;
+    isLoading = false;
   }
-
-  btn.disabled = false;
-  isLoading = false;
 }
 
 /* ── DOM helpers ── */
 function getInner() {
   return document.getElementById("messages-inner");
+}
+
+function escapeHtml(value) {
+  return String(value ?? "").replace(/[&<>"']/g, char => ({
+    "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;"
+  }[char]));
+}
+
+async function pollEvaluation(queryId, token, card) {
+  const label = card.querySelector("[data-evaluation-status]");
+  if (!label) return;
+  for (let attempt = 0; attempt < 20; attempt++) {
+    if (!card.isConnected || authToken !== token) return;
+    try {
+      const res = await fetch(`${API_BASE}/api/queries/${queryId}/evaluation`, {
+        headers: { "Authorization": `Bearer ${token}` }
+      });
+      if (!res.ok) throw new Error("Evaluation unavailable");
+      const data = await res.json();
+      if (!card.isConnected || authToken !== token) return;
+      if (data.status !== "pending") {
+        label.textContent = data.status === "completed" && Number.isFinite(data.quality_score)
+          ? data.quality_score.toFixed(2) : (data.status === "failed" ? "unavailable" : "not evaluated");
+        return;
+      }
+    } catch {
+      label.textContent = "status unavailable";
+      return;
+    }
+    if (attempt < 19) await new Promise(resolve => setTimeout(resolve, 3000));
+  }
+  label.textContent = "pending — check later";
 }
 
 function appendMessage(role, text) {
@@ -1520,13 +1590,25 @@ function appendMessage(role, text) {
 
   const bubble = document.createElement("div");
   bubble.className = "bubble";
-  bubble.textContent = text;
+  appendBoldMarkdown(bubble, text);
 
   group.appendChild(header);
   group.appendChild(bubble);
   inner.appendChild(group);
 
   scrollToBottom();
+}
+
+// Render only **bold** Markdown. Everything else remains textContent, so a
+// model response can never inject HTML or executable markup into the page.
+function appendBoldMarkdown(container, text) {
+  const parts = String(text ?? "").split(/(\*\*[^*\n]+\*\*)/g);
+  for (const part of parts) {
+    if (!part) continue;
+    const node = document.createElement(/^\*\*[^*\n]+\*\*$/.test(part) ? "strong" : "span");
+    node.textContent = part.startsWith("**") && part.endsWith("**") ? part.slice(2, -2) : part;
+    container.appendChild(node);
+  }
 }
 
 function appendTyping(id) {
@@ -1576,114 +1658,83 @@ function updateRoutingCount() {
   el.textContent = queryCount + (queryCount === 1 ? " query" : " queries");
 }
 
-function addRoutingCard(qNum, query, data) {
-  const side = document.getElementById("side-content");
-
-  const model = escapeHtml(data.model_used || "unknown");
-  const selectedModel = escapeHtml(data.selected_model || model);
-  const mInfo        = MODEL_DISPLAY[model]         || { label: model,         cls: "tag-default" };
-  const selectedInfo = MODEL_DISPLAY[selectedModel] || { label: selectedModel, cls: "tag-default" };
-  const lat = Number(data.latency_ms || 0);
-  const strat        = data.strategy_used || "—";
-  const quality = data.quality_score;
-  const fallbackUsed = Boolean(data.fallback_used) || selectedModel !== model;
-  const qId = Number(data.query_id || qNum);
-  const complexity   = data.complexity  || "—";
-  const compCls      = { low: "tag-low", medium: "tag-medium", high: "tag-high" }[complexity] || "tag-default";
-
+function makeRoutingCard(title, number) {
   const card = document.createElement("div");
   card.className = "routing-card highlight";
-
-  card.innerHTML = `
-    <div class="routing-card-header">
-      <span class="routing-card-title">Routing Decision</span>
-      <span class="routing-card-num">#${qId}</span>
-    </div>
-    <div class="routing-rows">
-      <div class="routing-row">
-        <span class="routing-label">${fallbackUsed ? "Used model" : "Model"}</span>
-        <span class="routing-value ${mInfo.cls}">${mInfo.label}</span>
-      </div>
-      ${fallbackUsed ? `
-      <div class="routing-row">
-        <span class="routing-label">Selected</span>
-        <span class="routing-value ${selectedInfo.cls}">${selectedInfo.label}</span>
-      </div>
-      <div class="routing-row">
-        <span class="routing-label">Fallback</span>
-        <span class="routing-value tag-error">yes</span>
-      </div>` : ""}
-      <div class="divider-row"></div>
-      <div class="routing-row">
-        <span class="routing-label">Complexity</span>
-        <span class="routing-value ${compCls}">${complexity}</span>
-      </div>
-      <div class="routing-row">
-        <span class="routing-label">Strategy</span>
-        <span class="routing-value tag-default">${strat}</span>
-      </div>
-      <div class="routing-row">
-        <span class="routing-label">Latency</span>
-        <span class="routing-value tag-default">${lat} ms</span>
-      </div>
-      ${quality != null ? `
-      <div class="divider-row"></div>
-      <div class="quality-bar-section">
-        <div class="quality-bar-row">
-          <span class="routing-label">Quality score</span>
-          <span class="routing-value tag-default">${quality.toFixed(2)}</span>
-        </div>
-        <div class="quality-bar-bg">
-          <div class="quality-bar-fill" style="width:${quality * 100}%"></div>
-        </div>
-      </div>` : `
-      <div class="routing-row">
-        <span class="routing-label">Quality</span>
-        <span class="routing-value tag-default">evaluating…</span>
-      </div>`}
-    </div>
-  `;
-
-  side.insertBefore(card, side.firstChild);
-  if (data.sources?.length) {
-    const sourceList = document.createElement("div");
-    sourceList.className = "input-hint";
-    sourceList.textContent = data.sources.map((s, i) => `[${i+1}] ${s.source}, page ${s.page}`).join("; ");
-    card.appendChild(sourceList);
+  const header = document.createElement("div");
+  header.className = "routing-card-header";
+  for (const [value, cls] of [[title, "routing-card-title"], [`#${number}`, "routing-card-num"]]) {
+    const label = document.createElement("span");
+    label.className = cls;
+    label.textContent = value;
+    header.appendChild(label);
   }
-  if (data.routing_reasons?.length) card.title = data.routing_reasons.join("; ");
-  if (data.evaluation_status === "pending") pollEvaluation(qId, authToken);
+  card.appendChild(header);
+  return card;
+}
 
-  // remove highlight after 2s
+function addRoutingRow(card, label, value, cls = "tag-default") {
+  const row = document.createElement("div");
+  row.className = "routing-row";
+  const key = document.createElement("span");
+  key.className = "routing-label";
+  key.textContent = label;
+  const text = document.createElement("span");
+  text.className = `routing-value ${cls}`;
+  text.textContent = value;
+  row.appendChild(key);
+  row.appendChild(text);
+  card.appendChild(row);
+  return text;
+}
+
+function addRoutingCard(qNum, query, data) {
+  const stringValue = (value, fallback) => typeof value === "string" && value ? value : fallback;
+  const model = stringValue(data.model_used, "unknown");
+  const selected = stringValue(data.selected_model, model);
+  const display = name => Object.hasOwn(MODEL_DISPLAY, name)
+    ? MODEL_DISPLAY[name] : {label: name, cls: "tag-default"};
+  const info = display(model);
+  const qId = Number.isInteger(data.query_id) && data.query_id > 0 ? data.query_id : qNum;
+  const card = makeRoutingCard(data.abstained ? "Answer unavailable" : "Routing Decision", qId);
+  addRoutingRow(card, "Model", info.label, info.cls);
+  if (selected !== model) addRoutingRow(card, "Selected", display(selected).label, display(selected).cls);
+  if (data.fallback_used === true) addRoutingRow(card, "Fallback", "yes", "tag-error");
+  const complexity = stringValue(data.complexity, "unknown");
+  const classes = {low: "tag-low", medium: "tag-medium", high: "tag-high"};
+  addRoutingRow(card, "Complexity", complexity, Object.hasOwn(classes, complexity) ? classes[complexity] : "tag-default");
+  addRoutingRow(card, "Strategy", stringValue(data.strategy_used, "unknown"));
+  const latency = data.latency_ms;
+  addRoutingRow(card, "Latency", Number.isFinite(latency) && latency >= 0 ? `${latency} ms` : "unavailable");
+  const score = data.quality_score;
+  const validScore = Number.isFinite(score) && score >= 0 && score <= 1;
+  const status = data.evaluation_status;
+  const quality = addRoutingRow(card, "Quality", validScore ? score.toFixed(2)
+    : status === "pending" ? "evaluating?" : status === "failed" ? "unavailable" : "not evaluated");
+  quality.setAttribute("data-evaluation-status", "");
+  if (Array.isArray(data.sources)) {
+    const sources = data.sources.filter(s => s && typeof s.source === "string");
+    if (sources.length) {
+      const list = document.createElement("div");
+      list.className = "input-hint";
+      list.textContent = sources.map((s, i) => `[${i+1}] ${s.source}, page ${Number.isInteger(s.page) ? s.page : "unknown"}`).join("; ");
+      card.appendChild(list);
+    }
+  }
+  if (Array.isArray(data.routing_reasons)) card.title = data.routing_reasons.filter(r => typeof r === "string").join("; ");
+  const side = document.getElementById("side-content");
+  side.insertBefore(card, side.firstChild);
+  if (status === "pending") void pollEvaluation(qId, authToken, card);
   setTimeout(() => card.classList.remove("highlight"), 2000);
 }
 
-function addErrorCard(qNum) {
+function addErrorCard(qNum, title = "Request failed", message = "Please try again.") {
+  const card = makeRoutingCard(title, qNum);
+  addRoutingRow(card, "Details", message);
   const side = document.getElementById("side-content");
-  const card = document.createElement("div");
-  card.className = "routing-card";
-  card.innerHTML = `
-    <div class="routing-card-header">
-      <span class="routing-card-title">Routing Failed</span>
-      <span class="routing-card-num">#${qNum}</span>
-    </div>
-    <div class="routing-rows">
-      <div class="routing-row">
-        <span class="routing-label">Status</span>
-        <span class="routing-value tag-error">Error</span>
-      </div>
-      <div class="routing-row">
-        <span class="routing-label">Check</span>
-        <span class="routing-value tag-default">Server running?</span>
-      </div>
-    </div>
-  `;
   side.insertBefore(card, side.firstChild);
 }
 
-/* ═══════════════════════════════════════════════
-   STATUS CHECK
-   ═══════════════════════════════════════════════ */
 async function checkStatus() {
   const dot  = document.getElementById("status-dot");
   const text = document.getElementById("status-text");

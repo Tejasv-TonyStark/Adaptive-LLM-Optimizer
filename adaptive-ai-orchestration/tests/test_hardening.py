@@ -82,12 +82,29 @@ class HardeningTests(unittest.TestCase):
         self.assertEqual(render_evidence(fixtures.RAG_GOOD["text"], CONTEXT),
                          (fixtures.CHUNK["text"]+" [1]", False))
 
+    def test_evidence_has_a_compact_response_limit(self):
+        long_quote = "x" * 351
+        source = {**fixtures.CHUNK, "text": long_quote}
+        payload = json.dumps(dict(answerable=True, evidence=[dict(source_id=1, quote=long_quote)]))
+        with self.assertRaises(ValueError):
+            render_evidence(payload, "", [source])
+
+    def test_evidence_rejects_a_question_as_an_answer(self):
+        question = "Can I work remotely whenever I want?"
+        source = {**fixtures.CHUNK, "text": question}
+        payload = json.dumps(dict(answerable=True, evidence=[dict(source_id=1, quote=question)]))
+        with self.assertRaises(ValueError):
+            render_evidence(payload, "", [source])
+
     def test_invalid_evidence_never_reaches_user(self):
         from Execution.Execution_layer import execute_query
         with patch("Execution.Execution_layer.invoke_model", return_value=fixtures.GOOD):
-            result = execute_query("our leave", "nova-micro", "rag", CONTEXT)
-        self.assertTrue(result["abstained"])
+            result = execute_query("our leave", "nova-micro", "rag", CONTEXT,
+                                   source_chunks=[fixtures.CHUNK])
+        self.assertFalse(result["abstained"])
         self.assertNotIn("A grounded answer", result["response"])
+        self.assertIn(fixtures.CHUNK["text"], result["response"])
+        self.assertEqual(result["model_used"], "extractive-rag")
         self.assertTrue(all(a["error"] == "InvalidEvidence" for a in result["attempts"]))
 
     def test_model_abstention_is_not_completed_answer(self):
@@ -153,6 +170,32 @@ class PipelineHardeningTests(unittest.TestCase):
     setUp = fixtures.DatabaseTests.setUp
     tearDown = fixtures.DatabaseTests.tearDown
     query = fixtures.DatabaseTests.query
+
+    def test_frontend_is_not_cached(self):
+        response=self.client.get("/")
+        self.assertEqual(response.status_code,200)
+        self.assertEqual(response.headers["cache-control"],"no-store")
+
+    def test_health_detects_missing_schema(self):
+        from sqlalchemy import text
+        self.assertEqual(self.client.get("/api/health").status_code,200)
+        with self.engine.begin() as connection:
+            connection.execute(text("DROP TABLE usage"))
+        response=self.client.get("/api/health")
+        self.assertEqual(response.status_code,503)
+        self.assertIn("schema",response.json()["detail"])
+
+    def test_missing_table_returns_json_instead_of_parser_error(self):
+        from sqlalchemy import text
+        with self.engine.begin() as connection:
+            connection.execute(text("DROP TABLE usage"))
+        with patch("Execution.Execution_layer.invoke_model") as provider:
+            response=self.client.post("/api/chat",headers=self.headers,
+                json=dict(query="What is Python?",session_id="schema-test"))
+        self.assertEqual(response.status_code,503)
+        self.assertIn("application/json",response.headers["content-type"])
+        self.assertIn("schema",response.json()["detail"])
+        provider.assert_not_called()
 
     def test_followup_uses_owned_session_and_retains_topic(self):
         with self.factory() as db, patch("core.service.retrieve",return_value=RETRIEVED) as retrieval, patch(
