@@ -57,6 +57,29 @@ Configure PostgreSQL and AWS Bedrock credentials in `.env`; see `.env.example`.
 
 This is public-demo mode: chat, feedback, evaluation status, and dashboard metrics do not require sign-in. Keep it local or behind a trusted network boundary because requests can incur AWS usage charges.
 
+## Public demo page
+
+The root page is a responsive portfolio and live-demo page. It documents the
+actual request flow, routing rules, retrieval approach, limitations, and the
+fictional Sankalpa data source. The chat panel is connected to `POST /api/chat`;
+it is not a mockup. The handbook button uses `GET /api/handbook` and serves only
+the bundled fictional PDF.
+
+Before publishing, replace the clearly labelled GitHub profile, repository, and
+Issues links in `Frontend/index.html`. They are intentionally placeholders here
+because this repository does not contain Tejasv's public URLs.
+
+## Deployment notes
+
+Deploy the FastAPI process with the `documents/` directory and the active
+`faiss_index/` version from `manifest.json` included. Configure the required
+database, AWS credential chain, `AWS_REGION`, and deployment origin through
+environment variables; do not commit `.env`. Set `ALLOWED_ORIGINS` to the final
+public origin. Run the evaluation worker separately only if optional quality
+judging is wanted. This is an educational demo, so add authentication, durable
+rate limiting, operational monitoring, and access controls before using it with
+non-public data.
+
 ## Demo questions
 
 - `What are the Sankalpa standard working hours?`

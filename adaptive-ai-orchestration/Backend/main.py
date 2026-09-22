@@ -4,7 +4,7 @@ import logging
 from fastapi import FastAPI, Depends, Request, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
-from fastapi.responses import JSONResponse
+from fastapi.responses import JSONResponse, FileResponse
 from pathlib import Path
 from slowapi.errors import RateLimitExceeded
 from slowapi import _rate_limit_exceeded_handler
@@ -62,6 +62,14 @@ def health_check(db: Session=Depends(get_db)):
         db.rollback()
         raise HTTPException(503, "Database unavailable or schema out of date. Run python -m database.init_db.")
     return HealthResponse(status="ok", database="connected", message="API, database and required schema ready")
+
+@app.get("/api/handbook", include_in_schema=False)
+def handbook():
+    """Serve only the fictional demo handbook; never expose an arbitrary path."""
+    path = Path(__file__).resolve().parents[1] / "documents" / "sankalpa_employee_handbook_realistic_simulation.pdf"
+    if not path.is_file():
+        raise HTTPException(404, "The demo handbook is not available on this deployment.")
+    return FileResponse(path, media_type="application/pdf", filename=path.name)
 
 @app.post("/api/auth/register", response_model=UserResponse, status_code=201)
 @limiter.limit("5/minute")
