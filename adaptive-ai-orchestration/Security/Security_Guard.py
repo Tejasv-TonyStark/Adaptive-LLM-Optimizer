@@ -81,6 +81,28 @@ COMPILED_OUT_OF_SCOPE = [
     re.compile(p, re.IGNORECASE) for p in OUT_OF_SCOPE_PATTERNS
 ]
 
+# Requests containing executable destructive operations are not useful in this
+# public Q&A demo and could be used to elicit harmful instructions.  These are
+# deliberately action-oriented patterns: discussing backups, retention, or
+# database security remains allowed.
+DESTRUCTIVE_ACTION_PATTERNS = [
+    # SQL destruction and common injection payloads.
+    r"\b(?:drop|truncate)\s+(?:table|database|schema|all\s+tables?)\b",
+    r"\bdelete\s+from\s+[a-z_][a-z0-9_]*",
+    r"\b(?:clear|wipe|erase|destroy|remove)\s+(?:the\s+)?(?:entire\s+|all\s+)?(?:[a-z_]+\s+){0,3}(?:database|db|tables?|records?|data)\b",
+    r"\bunion\s+(?:all\s+)?select\b",
+    r";\s*(?:drop|delete|truncate|alter)\b",
+    # Operating-system commands aimed at deleting files or disks.
+    r"\brm\s+-[a-z]*r[a-z]*f\b",
+    r"\bremove-item\b.*\b-(?:recurse|force)\b",
+    r"\b(?:del|erase)\s+/[a-z]*f\b",
+    r"\bformat\s+[a-z]:",
+]
+
+COMPILED_DESTRUCTIVE_ACTIONS = [
+    re.compile(pattern, re.IGNORECASE) for pattern in DESTRUCTIVE_ACTION_PATTERNS
+]
+
 # ──────────────────────────────────────────
 # INPUT LIMITS
 # ──────────────────────────────────────────
@@ -120,6 +142,12 @@ def inspect_query(query: str, retrieval_needed: bool = False) -> dict:
             "Please ask about company policies, guidelines, or procedures."
         )
 
+    if _contains_destructive_action(clean_query):
+        return _block(
+            "Query blocked: destructive commands, data-deletion requests, and "
+            "SQL-injection-style payloads are not supported in this public demo."
+        )
+
     return {
         "safe":        True,
         "reason":      None,
@@ -155,6 +183,10 @@ def _check_rag_scope(query: str) -> bool:
         if pattern.search(query):
             return True
     return False
+
+
+def _contains_destructive_action(query: str) -> bool:
+    return any(pattern.search(query) for pattern in COMPILED_DESTRUCTIVE_ACTIONS)
 
 
 def _block(reason: str) -> dict:
