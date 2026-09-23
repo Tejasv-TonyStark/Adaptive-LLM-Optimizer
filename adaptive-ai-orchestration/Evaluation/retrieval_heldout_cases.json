@@ -1,0 +1,19 @@
+{
+  "version": 1,
+  "description": "Frozen author-labeled source-support evaluation against the bundled Handbook v2.0. These cases were not used to implement router rules, but are not independently reviewed or statistically representative.",
+  "cases": [
+    {"id":"hours","query":"What are Sankalpa's standard working hours?","supporting_passages":["Sankalpa standard working hours are 9:00 AM to 5:30 PM, Monday through Friday."]},
+    {"id":"remote_days","query":"How many remote days may eligible teams normally approve?","supporting_passages":["Eligible teams may normally approve up to 2 remote days per"]},
+    {"id":"annual_leave","query":"How many annual leave days are available each calendar year?","supporting_passages":["Annual leave 12 days per calendar year."]},
+    {"id":"carry_forward","query":"How much unused annual leave can carry forward?","supporting_passages":["up to 5 unused annual-leave days may carry forward"]},
+    {"id":"pay_cycle","query":"When is the monthly pay cycle in this simulation?","supporting_passages":["Monthly, on the last working day of the month for this simulation."]},
+    {"id":"wellness","query":"What is the maximum yearly wellness allowance?","supporting_passages":["eligible employees may claim up to INR 12,000 per calendar year"]},
+    {"id":"reviews","query":"How often does Sankalpa conduct formal performance reviews?","supporting_passages":["Sankalpa conducts performance reviews twice each year."]},
+    {"id":"fraud","query":"Who should employees contact about potential fraud?","supporting_passages":["Potential fraud, bribery, harassment or retaliation: contact People Operations or the ethics channel promptly."]},
+    {"id":"phishing","query":"What should an employee do after suspected phishing?","supporting_passages":["Employees must report suspected phishing or data loss to IT immediately."]},
+    {"id":"expense_deadline","query":"What is the deadline to submit a travel expense?","supporting_passages":["Submit the expense in the portal within 30 days of the transaction or trip completion."]},
+    {"id":"gifts","query":"When is written Ethics approval needed for a vendor gift?","supporting_passages":["gifts with a value above INR 5,000 from a current or prospective vendor, customer or partner require written Ethics approval before acceptance."]},
+    {"id":"resignation","query":"How much written notice is expected when an employee resigns?","supporting_passages":["Employees who resign from Sankalpa are expected to provide 30 days of written notice."]},
+    {"id":"teleportation","query":"What is the policy for teleportation reimbursement?","supporting_passages":[],"expect_abstention":true}
+  ]
+}

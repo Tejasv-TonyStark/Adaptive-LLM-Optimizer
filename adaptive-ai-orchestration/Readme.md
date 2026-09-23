@@ -95,6 +95,22 @@ Intent and complexity are transparent rule-based heuristics, not a trained class
 
 Set `EVALUATION_SAMPLE_RATE=1.0` if every normal model answer should receive an LLM judge score, and run `Evaluation.worker` to process pending work. Retrieval-only responses are excluded from model-quality scoring because they are source extracts rather than model-generated answers.
 
+### Retrieval ablation
+
+Run the source-support ablation against the bundled current Handbook v2.0 index:
+
+```powershell
+.\venv\Scripts\python.exe -m Evaluation.retrieval_ablation `
+  --cases Evaluation\retrieval_heldout_cases.json `
+  --output benchmark_results\retrieval_heldout_ablation.json
+```
+
+It compares vector-only retrieval, lexical reranking, and reranking with
+adjacent chunks. It makes Titan embedding calls and reports supporting-passage
+recall only—not generated-answer quality, hallucination rate, cost, latency, or
+production accuracy. The 13 bundled cases are frozen author-labeled cases, not
+an independently reviewed or statistically representative benchmark.
+
 ## Safety controls
 
 - Query limits, basic sanitization, and rate limiting

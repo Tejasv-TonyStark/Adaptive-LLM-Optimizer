@@ -1,0 +1,597 @@
+{
+  "kind": "retrieval ablation; source-passage recall only",
+  "limitations": "Frozen author-labeled source-support evaluation against the bundled Handbook v2.0. These cases were not used to implement router rules, but are not independently reviewed or statistically representative.",
+  "top_k": 5,
+  "threshold": 0.05,
+  "variants": {
+    "vector": {
+      "passage_recall": 0.9166666666666666,
+      "supporting_passages_found": 11,
+      "supporting_passages_total": 12,
+      "empty_retrieval_on_unanswerable": 0.0,
+      "results": [
+        {
+          "id": "hours",
+          "supporting_passages": 1,
+          "retrieved_passages": 1,
+          "passage_recall": 1.0,
+          "expected_abstention": false,
+          "empty_retrieval": false,
+          "chunk_ids": [
+            "sankalpa_employee_handbook_realistic_simulation:p6:c1",
+            "sankalpa_employee_handbook_realistic_simulation:p6:c0",
+            "sankalpa_employee_handbook_realistic_simulation:p26:c0",
+            "sankalpa_employee_handbook_realistic_simulation:p23:c1",
+            "sankalpa_employee_handbook_realistic_simulation:p10:c1"
+          ]
+        },
+        {
+          "id": "remote_days",
+          "supporting_passages": 1,
+          "retrieved_passages": 0,
+          "passage_recall": 0.0,
+          "expected_abstention": false,
+          "empty_retrieval": false,
+          "chunk_ids": [
+            "sankalpa_employee_handbook_realistic_simulation:p7:c3",
+            "sankalpa_employee_handbook_realistic_simulation:p7:c1",
+            "sankalpa_employee_handbook_realistic_simulation:p26:c1",
+            "sankalpa_employee_handbook_realistic_simulation:p8:c1",
+            "sankalpa_employee_handbook_realistic_simulation:p7:c2"
+          ]
+        },
+        {
+          "id": "annual_leave",
+          "supporting_passages": 1,
+          "retrieved_passages": 1,
+          "passage_recall": 1.0,
+          "expected_abstention": false,
+          "empty_retrieval": false,
+          "chunk_ids": [
+            "sankalpa_employee_handbook_realistic_simulation:p8:c3",
+            "sankalpa_employee_handbook_realistic_simulation:p8:c2",
+            "sankalpa_employee_handbook_realistic_simulation:p8:c0",
+            "sankalpa_employee_handbook_realistic_simulation:p8:c1",
+            "sankalpa_employee_handbook_realistic_simulation:p26:c2"
+          ]
+        },
+        {
+          "id": "carry_forward",
+          "supporting_passages": 1,
+          "retrieved_passages": 1,
+          "passage_recall": 1.0,
+          "expected_abstention": false,
+          "empty_retrieval": false,
+          "chunk_ids": [
+            "sankalpa_employee_handbook_realistic_simulation:p8:c3",
+            "sankalpa_employee_handbook_realistic_simulation:p8:c2",
+            "sankalpa_employee_handbook_realistic_simulation:p8:c1",
+            "sankalpa_employee_handbook_realistic_simulation:p24:c1",
+            "sankalpa_employee_handbook_realistic_simulation:p8:c0"
+          ]
+        },
+        {
+          "id": "pay_cycle",
+          "supporting_passages": 1,
+          "retrieved_passages": 1,
+          "passage_recall": 1.0,
+          "expected_abstention": false,
+          "empty_retrieval": false,
+          "chunk_ids": [
+            "sankalpa_employee_handbook_realistic_simulation:p9:c0",
+            "sankalpa_employee_handbook_realistic_simulation:p8:c1",
+            "sankalpa_employee_handbook_realistic_simulation:p26:c0",
+            "sankalpa_employee_handbook_realistic_simulation:p8:c0",
+            "sankalpa_employee_handbook_realistic_simulation:p5:c0"
+          ]
+        },
+        {
+          "id": "wellness",
+          "supporting_passages": 1,
+          "retrieved_passages": 1,
+          "passage_recall": 1.0,
+          "expected_abstention": false,
+          "empty_retrieval": false,
+          "chunk_ids": [
+            "sankalpa_employee_handbook_realistic_simulation:p10:c1",
+            "sankalpa_employee_handbook_realistic_simulation:p10:c0",
+            "sankalpa_employee_handbook_realistic_simulation:p10:c2",
+            "sankalpa_employee_handbook_realistic_simulation:p8:c3",
+            "sankalpa_employee_handbook_realistic_simulation:p8:c1"
+          ]
+        },
+        {
+          "id": "reviews",
+          "supporting_passages": 1,
+          "retrieved_passages": 1,
+          "passage_recall": 1.0,
+          "expected_abstention": false,
+          "empty_retrieval": false,
+          "chunk_ids": [
+            "sankalpa_employee_handbook_realistic_simulation:p11:c1",
+            "sankalpa_employee_handbook_realistic_simulation:p11:c0",
+            "sankalpa_employee_handbook_realistic_simulation:p6:c1",
+            "sankalpa_employee_handbook_realistic_simulation:p11:c2",
+            "sankalpa_employee_handbook_realistic_simulation:p23:c1"
+          ]
+        },
+        {
+          "id": "fraud",
+          "supporting_passages": 1,
+          "retrieved_passages": 1,
+          "passage_recall": 1.0,
+          "expected_abstention": false,
+          "empty_retrieval": false,
+          "chunk_ids": [
+            "sankalpa_employee_handbook_realistic_simulation:p14:c3",
+            "sankalpa_employee_handbook_realistic_simulation:p13:c2",
+            "sankalpa_employee_handbook_realistic_simulation:p13:c1",
+            "sankalpa_employee_handbook_realistic_simulation:p21:c2",
+            "sankalpa_employee_handbook_realistic_simulation:p20:c1"
+          ]
+        },
+        {
+          "id": "phishing",
+          "supporting_passages": 1,
+          "retrieved_passages": 1,
+          "passage_recall": 1.0,
+          "expected_abstention": false,
+          "empty_retrieval": false,
+          "chunk_ids": [
+            "sankalpa_employee_handbook_realistic_simulation:p14:c3",
+            "sankalpa_employee_handbook_realistic_simulation:p26:c2",
+            "sankalpa_employee_handbook_realistic_simulation:p13:c2",
+            "sankalpa_employee_handbook_realistic_simulation:p16:c2",
+            "sankalpa_employee_handbook_realistic_simulation:p21:c2"
+          ]
+        },
+        {
+          "id": "expense_deadline",
+          "supporting_passages": 1,
+          "retrieved_passages": 1,
+          "passage_recall": 1.0,
+          "expected_abstention": false,
+          "empty_retrieval": false,
+          "chunk_ids": [
+            "sankalpa_employee_handbook_realistic_simulation:p17:c3",
+            "sankalpa_employee_handbook_realistic_simulation:p25:c1",
+            "sankalpa_employee_handbook_realistic_simulation:p17:c4",
+            "sankalpa_employee_handbook_realistic_simulation:p26:c1",
+            "sankalpa_employee_handbook_realistic_simulation:p17:c0"
+          ]
+        },
+        {
+          "id": "gifts",
+          "supporting_passages": 1,
+          "retrieved_passages": 1,
+          "passage_recall": 1.0,
+          "expected_abstention": false,
+          "empty_retrieval": false,
+          "chunk_ids": [
+            "sankalpa_employee_handbook_realistic_simulation:p25:c2",
+            "sankalpa_employee_handbook_realistic_simulation:p19:c2",
+            "sankalpa_employee_handbook_realistic_simulation:p24:c1",
+            "sankalpa_employee_handbook_realistic_simulation:p27:c3",
+            "sankalpa_employee_handbook_realistic_simulation:p12:c1"
+          ]
+        },
+        {
+          "id": "resignation",
+          "supporting_passages": 1,
+          "retrieved_passages": 1,
+          "passage_recall": 1.0,
+          "expected_abstention": false,
+          "empty_retrieval": false,
+          "chunk_ids": [
+            "sankalpa_employee_handbook_realistic_simulation:p23:c1",
+            "sankalpa_employee_handbook_realistic_simulation:p26:c2",
+            "sankalpa_employee_handbook_realistic_simulation:p23:c0",
+            "sankalpa_employee_handbook_realistic_simulation:p8:c1",
+            "sankalpa_employee_handbook_realistic_simulation:p8:c0"
+          ]
+        },
+        {
+          "id": "teleportation",
+          "supporting_passages": 0,
+          "retrieved_passages": 0,
+          "passage_recall": null,
+          "expected_abstention": true,
+          "empty_retrieval": false,
+          "chunk_ids": [
+            "sankalpa_employee_handbook_realistic_simulation:p17:c0",
+            "sankalpa_employee_handbook_realistic_simulation:p23:c2",
+            "sankalpa_employee_handbook_realistic_simulation:p25:c1",
+            "sankalpa_employee_handbook_realistic_simulation:p10:c1",
+            "sankalpa_employee_handbook_realistic_simulation:p10:c2"
+          ]
+        }
+      ]
+    },
+    "rerank": {
+      "passage_recall": 1.0,
+      "supporting_passages_found": 12,
+      "supporting_passages_total": 12,
+      "empty_retrieval_on_unanswerable": 0.0,
+      "results": [
+        {
+          "id": "hours",
+          "supporting_passages": 1,
+          "retrieved_passages": 1,
+          "passage_recall": 1.0,
+          "expected_abstention": false,
+          "empty_retrieval": false,
+          "chunk_ids": [
+            "sankalpa_employee_handbook_realistic_simulation:p6:c1",
+            "sankalpa_employee_handbook_realistic_simulation:p6:c0",
+            "sankalpa_employee_handbook_realistic_simulation:p26:c0",
+            "sankalpa_employee_handbook_realistic_simulation:p3:c0",
+            "sankalpa_employee_handbook_realistic_simulation:p23:c1"
+          ]
+        },
+        {
+          "id": "remote_days",
+          "supporting_passages": 1,
+          "retrieved_passages": 1,
+          "passage_recall": 1.0,
+          "expected_abstention": false,
+          "empty_retrieval": false,
+          "chunk_ids": [
+            "sankalpa_employee_handbook_realistic_simulation:p7:c0",
+            "sankalpa_employee_handbook_realistic_simulation:p7:c3",
+            "sankalpa_employee_handbook_realistic_simulation:p26:c1",
+            "sankalpa_employee_handbook_realistic_simulation:p8:c1",
+            "sankalpa_employee_handbook_realistic_simulation:p8:c4"
+          ]
+        },
+        {
+          "id": "annual_leave",
+          "supporting_passages": 1,
+          "retrieved_passages": 1,
+          "passage_recall": 1.0,
+          "expected_abstention": false,
+          "empty_retrieval": false,
+          "chunk_ids": [
+            "sankalpa_employee_handbook_realistic_simulation:p8:c3",
+            "sankalpa_employee_handbook_realistic_simulation:p8:c0",
+            "sankalpa_employee_handbook_realistic_simulation:p8:c1",
+            "sankalpa_employee_handbook_realistic_simulation:p26:c0",
+            "sankalpa_employee_handbook_realistic_simulation:p8:c2"
+          ]
+        },
+        {
+          "id": "carry_forward",
+          "supporting_passages": 1,
+          "retrieved_passages": 1,
+          "passage_recall": 1.0,
+          "expected_abstention": false,
+          "empty_retrieval": false,
+          "chunk_ids": [
+            "sankalpa_employee_handbook_realistic_simulation:p8:c3",
+            "sankalpa_employee_handbook_realistic_simulation:p8:c1",
+            "sankalpa_employee_handbook_realistic_simulation:p8:c2",
+            "sankalpa_employee_handbook_realistic_simulation:p26:c0",
+            "sankalpa_employee_handbook_realistic_simulation:p8:c0"
+          ]
+        },
+        {
+          "id": "pay_cycle",
+          "supporting_passages": 1,
+          "retrieved_passages": 1,
+          "passage_recall": 1.0,
+          "expected_abstention": false,
+          "empty_retrieval": false,
+          "chunk_ids": [
+            "sankalpa_employee_handbook_realistic_simulation:p9:c0",
+            "sankalpa_employee_handbook_realistic_simulation:p8:c1",
+            "sankalpa_employee_handbook_realistic_simulation:p26:c0",
+            "sankalpa_employee_handbook_realistic_simulation:p8:c3",
+            "sankalpa_employee_handbook_realistic_simulation:p1:c0"
+          ]
+        },
+        {
+          "id": "wellness",
+          "supporting_passages": 1,
+          "retrieved_passages": 1,
+          "passage_recall": 1.0,
+          "expected_abstention": false,
+          "empty_retrieval": false,
+          "chunk_ids": [
+            "sankalpa_employee_handbook_realistic_simulation:p10:c1",
+            "sankalpa_employee_handbook_realistic_simulation:p10:c0",
+            "sankalpa_employee_handbook_realistic_simulation:p10:c2",
+            "sankalpa_employee_handbook_realistic_simulation:p8:c3",
+            "sankalpa_employee_handbook_realistic_simulation:p8:c1"
+          ]
+        },
+        {
+          "id": "reviews",
+          "supporting_passages": 1,
+          "retrieved_passages": 1,
+          "passage_recall": 1.0,
+          "expected_abstention": false,
+          "empty_retrieval": false,
+          "chunk_ids": [
+            "sankalpa_employee_handbook_realistic_simulation:p11:c1",
+            "sankalpa_employee_handbook_realistic_simulation:p11:c0",
+            "sankalpa_employee_handbook_realistic_simulation:p26:c2",
+            "sankalpa_employee_handbook_realistic_simulation:p11:c2",
+            "sankalpa_employee_handbook_realistic_simulation:p6:c1"
+          ]
+        },
+        {
+          "id": "fraud",
+          "supporting_passages": 1,
+          "retrieved_passages": 1,
+          "passage_recall": 1.0,
+          "expected_abstention": false,
+          "empty_retrieval": false,
+          "chunk_ids": [
+            "sankalpa_employee_handbook_realistic_simulation:p14:c3",
+            "sankalpa_employee_handbook_realistic_simulation:p13:c2",
+            "sankalpa_employee_handbook_realistic_simulation:p20:c1",
+            "sankalpa_employee_handbook_realistic_simulation:p22:c2",
+            "sankalpa_employee_handbook_realistic_simulation:p2:c2"
+          ]
+        },
+        {
+          "id": "phishing",
+          "supporting_passages": 1,
+          "retrieved_passages": 1,
+          "passage_recall": 1.0,
+          "expected_abstention": false,
+          "empty_retrieval": false,
+          "chunk_ids": [
+            "sankalpa_employee_handbook_realistic_simulation:p14:c3",
+            "sankalpa_employee_handbook_realistic_simulation:p26:c2",
+            "sankalpa_employee_handbook_realistic_simulation:p13:c2",
+            "sankalpa_employee_handbook_realistic_simulation:p14:c0",
+            "sankalpa_employee_handbook_realistic_simulation:p20:c1"
+          ]
+        },
+        {
+          "id": "expense_deadline",
+          "supporting_passages": 1,
+          "retrieved_passages": 1,
+          "passage_recall": 1.0,
+          "expected_abstention": false,
+          "empty_retrieval": false,
+          "chunk_ids": [
+            "sankalpa_employee_handbook_realistic_simulation:p17:c4",
+            "sankalpa_employee_handbook_realistic_simulation:p17:c3",
+            "sankalpa_employee_handbook_realistic_simulation:p25:c1",
+            "sankalpa_employee_handbook_realistic_simulation:p17:c0",
+            "sankalpa_employee_handbook_realistic_simulation:p17:c1"
+          ]
+        },
+        {
+          "id": "gifts",
+          "supporting_passages": 1,
+          "retrieved_passages": 1,
+          "passage_recall": 1.0,
+          "expected_abstention": false,
+          "empty_retrieval": false,
+          "chunk_ids": [
+            "sankalpa_employee_handbook_realistic_simulation:p25:c2",
+            "sankalpa_employee_handbook_realistic_simulation:p19:c2",
+            "sankalpa_employee_handbook_realistic_simulation:p24:c1",
+            "sankalpa_employee_handbook_realistic_simulation:p27:c3",
+            "sankalpa_employee_handbook_realistic_simulation:p24:c2"
+          ]
+        },
+        {
+          "id": "resignation",
+          "supporting_passages": 1,
+          "retrieved_passages": 1,
+          "passage_recall": 1.0,
+          "expected_abstention": false,
+          "empty_retrieval": false,
+          "chunk_ids": [
+            "sankalpa_employee_handbook_realistic_simulation:p26:c2",
+            "sankalpa_employee_handbook_realistic_simulation:p23:c0",
+            "sankalpa_employee_handbook_realistic_simulation:p23:c1",
+            "sankalpa_employee_handbook_realistic_simulation:p8:c1",
+            "sankalpa_employee_handbook_realistic_simulation:p28:c1"
+          ]
+        },
+        {
+          "id": "teleportation",
+          "supporting_passages": 0,
+          "retrieved_passages": 0,
+          "passage_recall": null,
+          "expected_abstention": true,
+          "empty_retrieval": false,
+          "chunk_ids": [
+            "sankalpa_employee_handbook_realistic_simulation:p17:c0",
+            "sankalpa_employee_handbook_realistic_simulation:p23:c2",
+            "sankalpa_employee_handbook_realistic_simulation:p25:c1",
+            "sankalpa_employee_handbook_realistic_simulation:p10:c1",
+            "sankalpa_employee_handbook_realistic_simulation:p10:c2"
+          ]
+        }
+      ]
+    },
+    "rerank_neighbors": {
+      "passage_recall": 1.0,
+      "supporting_passages_found": 12,
+      "supporting_passages_total": 12,
+      "empty_retrieval_on_unanswerable": 0.0,
+      "results": [
+        {
+          "id": "hours",
+          "supporting_passages": 1,
+          "retrieved_passages": 1,
+          "passage_recall": 1.0,
+          "expected_abstention": false,
+          "empty_retrieval": false,
+          "chunk_ids": [
+            "sankalpa_employee_handbook_realistic_simulation:p6:c1",
+            "sankalpa_employee_handbook_realistic_simulation:p6:c0",
+            "sankalpa_employee_handbook_realistic_simulation:p6:c2"
+          ]
+        },
+        {
+          "id": "remote_days",
+          "supporting_passages": 1,
+          "retrieved_passages": 1,
+          "passage_recall": 1.0,
+          "expected_abstention": false,
+          "empty_retrieval": false,
+          "chunk_ids": [
+            "sankalpa_employee_handbook_realistic_simulation:p7:c0",
+            "sankalpa_employee_handbook_realistic_simulation:p7:c3",
+            "sankalpa_employee_handbook_realistic_simulation:p7:c1",
+            "sankalpa_employee_handbook_realistic_simulation:p7:c4"
+          ]
+        },
+        {
+          "id": "annual_leave",
+          "supporting_passages": 1,
+          "retrieved_passages": 1,
+          "passage_recall": 1.0,
+          "expected_abstention": false,
+          "empty_retrieval": false,
+          "chunk_ids": [
+            "sankalpa_employee_handbook_realistic_simulation:p8:c3",
+            "sankalpa_employee_handbook_realistic_simulation:p8:c0",
+            "sankalpa_employee_handbook_realistic_simulation:p8:c4",
+            "sankalpa_employee_handbook_realistic_simulation:p8:c1"
+          ]
+        },
+        {
+          "id": "carry_forward",
+          "supporting_passages": 1,
+          "retrieved_passages": 1,
+          "passage_recall": 1.0,
+          "expected_abstention": false,
+          "empty_retrieval": false,
+          "chunk_ids": [
+            "sankalpa_employee_handbook_realistic_simulation:p8:c3",
+            "sankalpa_employee_handbook_realistic_simulation:p8:c1",
+            "sankalpa_employee_handbook_realistic_simulation:p8:c4",
+            "sankalpa_employee_handbook_realistic_simulation:p8:c2"
+          ]
+        },
+        {
+          "id": "pay_cycle",
+          "supporting_passages": 1,
+          "retrieved_passages": 1,
+          "passage_recall": 1.0,
+          "expected_abstention": false,
+          "empty_retrieval": false,
+          "chunk_ids": [
+            "sankalpa_employee_handbook_realistic_simulation:p9:c0",
+            "sankalpa_employee_handbook_realistic_simulation:p8:c1",
+            "sankalpa_employee_handbook_realistic_simulation:p9:c1",
+            "sankalpa_employee_handbook_realistic_simulation:p8:c2"
+          ]
+        },
+        {
+          "id": "wellness",
+          "supporting_passages": 1,
+          "retrieved_passages": 1,
+          "passage_recall": 1.0,
+          "expected_abstention": false,
+          "empty_retrieval": false,
+          "chunk_ids": [
+            "sankalpa_employee_handbook_realistic_simulation:p10:c1",
+            "sankalpa_employee_handbook_realistic_simulation:p10:c0",
+            "sankalpa_employee_handbook_realistic_simulation:p10:c2"
+          ]
+        },
+        {
+          "id": "reviews",
+          "supporting_passages": 1,
+          "retrieved_passages": 1,
+          "passage_recall": 1.0,
+          "expected_abstention": false,
+          "empty_retrieval": false,
+          "chunk_ids": [
+            "sankalpa_employee_handbook_realistic_simulation:p11:c1",
+            "sankalpa_employee_handbook_realistic_simulation:p11:c0",
+            "sankalpa_employee_handbook_realistic_simulation:p11:c2"
+          ]
+        },
+        {
+          "id": "fraud",
+          "supporting_passages": 1,
+          "retrieved_passages": 1,
+          "passage_recall": 1.0,
+          "expected_abstention": false,
+          "empty_retrieval": false,
+          "chunk_ids": [
+            "sankalpa_employee_handbook_realistic_simulation:p14:c3",
+            "sankalpa_employee_handbook_realistic_simulation:p13:c2",
+            "sankalpa_employee_handbook_realistic_simulation:p14:c4",
+            "sankalpa_employee_handbook_realistic_simulation:p13:c3"
+          ]
+        },
+        {
+          "id": "phishing",
+          "supporting_passages": 1,
+          "retrieved_passages": 1,
+          "passage_recall": 1.0,
+          "expected_abstention": false,
+          "empty_retrieval": false,
+          "chunk_ids": [
+            "sankalpa_employee_handbook_realistic_simulation:p14:c3",
+            "sankalpa_employee_handbook_realistic_simulation:p26:c2",
+            "sankalpa_employee_handbook_realistic_simulation:p14:c4"
+          ]
+        },
+        {
+          "id": "expense_deadline",
+          "supporting_passages": 1,
+          "retrieved_passages": 1,
+          "passage_recall": 1.0,
+          "expected_abstention": false,
+          "empty_retrieval": false,
+          "chunk_ids": [
+            "sankalpa_employee_handbook_realistic_simulation:p17:c4",
+            "sankalpa_employee_handbook_realistic_simulation:p17:c3"
+          ]
+        },
+        {
+          "id": "gifts",
+          "supporting_passages": 1,
+          "retrieved_passages": 1,
+          "passage_recall": 1.0,
+          "expected_abstention": false,
+          "empty_retrieval": false,
+          "chunk_ids": [
+            "sankalpa_employee_handbook_realistic_simulation:p25:c2",
+            "sankalpa_employee_handbook_realistic_simulation:p19:c2",
+            "sankalpa_employee_handbook_realistic_simulation:p25:c3",
+            "sankalpa_employee_handbook_realistic_simulation:p19:c3"
+          ]
+        },
+        {
+          "id": "resignation",
+          "supporting_passages": 1,
+          "retrieved_passages": 1,
+          "passage_recall": 1.0,
+          "expected_abstention": false,
+          "empty_retrieval": false,
+          "chunk_ids": [
+            "sankalpa_employee_handbook_realistic_simulation:p26:c2",
+            "sankalpa_employee_handbook_realistic_simulation:p23:c0",
+            "sankalpa_employee_handbook_realistic_simulation:p23:c1"
+          ]
+        },
+        {
+          "id": "teleportation",
+          "supporting_passages": 0,
+          "retrieved_passages": 0,
+          "passage_recall": null,
+          "expected_abstention": true,
+          "empty_retrieval": false,
+          "chunk_ids": [
+            "sankalpa_employee_handbook_realistic_simulation:p17:c0",
+            "sankalpa_employee_handbook_realistic_simulation:p23:c2",
+            "sankalpa_employee_handbook_realistic_simulation:p17:c1",
+            "sankalpa_employee_handbook_realistic_simulation:p23:c3"
+          ]
+        }
+      ]
+    }
+  }
+}
